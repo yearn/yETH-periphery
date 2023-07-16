@@ -49,10 +49,6 @@ def tokens(project, deployer, n):
     return tokens
 
 @pytest.fixture
-def deployer(accounts):
-    return accounts[0]
-
-@pytest.fixture
 def alice(accounts):
     return accounts[1]
 
