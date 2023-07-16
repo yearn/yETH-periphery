@@ -10,7 +10,7 @@ def provider(project, deployer):
     return project.StaderRateProvider.deploy(sender=deployer)
 
 def test_oracle_contract(provider, deployer):
-    provider.verify_oracle_contract(sender=deployer)
+    assert provider.verify_oracle_contract(sender=deployer)
 
 def test_rate_provider(provider):
     rate = provider.rate(ASSET)

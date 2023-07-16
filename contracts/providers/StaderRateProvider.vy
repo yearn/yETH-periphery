@@ -28,7 +28,8 @@ def rate(_asset: address) -> uint256:
 
 # for testing purposes
 @external
-def verify_oracle_contract():
+@view
+def verify_oracle_contract() -> bool:
     config: address = StaderManager(MANAGER).staderConfig()
     oracle: address = StaderConfig(config).getStaderOracle()
-    assert oracle == ORACLE
+    return oracle == ORACLE

@@ -13,7 +13,7 @@ def provider(project, deployer):
     return project.StaFiRateProvider.deploy(sender=deployer)
 
 def test_balances_contract(provider, deployer):
-    provider.verify_balances_contract(sender=deployer)
+    assert provider.verify_balances_contract(sender=deployer)
 
 def test_rate_provider(provider, accounts):
     deposit = Contract('0xc12dfb80d80d564DB9b180AbF61a252eE6355058')

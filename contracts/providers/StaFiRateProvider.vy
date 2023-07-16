@@ -20,6 +20,7 @@ def rate(_asset: address) -> uint256:
 
 # for testing purposes
 @external
-def verify_balances_contract():
+@view
+def verify_balances_contract() -> bool:
     balances: address = StaFiStorage(STORAGE).getAddress(keccak256('contract.addressstafiNetworkBalances'))
-    assert balances == BALANCES
+    return balances == BALANCES
