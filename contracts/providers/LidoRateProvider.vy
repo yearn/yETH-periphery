@@ -1,7 +1,5 @@
 # @version 0.3.7
 
-from vyper.interfaces import ERC4626
-
 interface LidoToken:
     def getPooledEthByShares(_shares: uint256) -> uint256: view
 
