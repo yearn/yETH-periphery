@@ -89,7 +89,7 @@ def test_set_provider_whitelist(deployer, alice, bob, token, voting):
     assert voting.candidates_map(epoch, token) == 0
 
     # setting a rate provider of a token that applied will automatically whitelist it
-    voting.set_whitelister(bob, sender=deployer)
+    voting.set_operator(bob, sender=deployer)
     with ape.reverts():
         voting.set_rate_provider(token, RATE_PROVIDER, sender=alice)
     voting.set_rate_provider(token, RATE_PROVIDER, sender=bob)

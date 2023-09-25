@@ -16,7 +16,6 @@ def __init__():
     @notice Constructor
     """
     self.management = msg.sender
-    log SetManagement(msg.sender)
 
 @external
 def execute(_to: address, _data: Bytes[2048]):

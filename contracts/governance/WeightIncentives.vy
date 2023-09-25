@@ -27,6 +27,26 @@ user_claimed: public(HashMap[address, HashMap[uint256, HashMap[uint256, HashMap[
 deposit_deadline: public(uint256)
 claim_deadline: public(uint256)
 
+event Deposit:
+    epoch: indexed(uint256)
+    idx: indexed(uint256)
+    token: indexed(address)
+    amount: uint256
+    depositor: address
+
+event Claim:
+    epoch: indexed(uint256)
+    idx: indexed(uint256)
+    token: indexed(address)
+    amount: uint256
+    account: address
+
+event Sweep:
+    epoch: indexed(uint256)
+    token: indexed(address)
+    amount: uint256
+    recipient: address
+
 event PendingManagement:
     management: indexed(address)
 
@@ -67,6 +87,7 @@ def deposit(_idx: uint256, _token: address, _amount: uint256):
     self.unclaimed[epoch][_token] += _amount
 
     assert ERC20(_token).transferFrom(msg.sender, self, _amount, default_return_value=True)
+    log Deposit(epoch, _idx, _token, _amount, msg.sender)
 
 @external
 @view
@@ -107,6 +128,7 @@ def _claim(_epoch: uint256, _idx: uint256, _token: address, _account: address):
     self.unclaimed[_epoch][_token] -= amount
 
     assert ERC20(_token).transfer(_account, amount, default_return_value=True)
+    log Claim(_epoch, _idx, _token, amount, _account)
 
 @external
 @view
@@ -125,6 +147,7 @@ def sweep(_epoch: uint256, _token: address, _recipient: address = msg.sender):
     self.unclaimed[_epoch][_token] = 0
 
     assert ERC20(_token).transfer(_recipient, amount, default_return_value=True)
+    log Sweep(_epoch, _token, amount, _recipient)
 
 @external
 def set_treasury(_treasury: address):

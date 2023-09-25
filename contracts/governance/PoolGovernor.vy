@@ -39,6 +39,27 @@ inclusion_vote: public(address)
 weight_vote: public(address)
 latest_executed_epoch: public(uint256)
 
+event AddAsset:
+    epoch: indexed(uint256)
+    asset: indexed(address)
+    lower_band: uint256
+    upper_band: uint256
+    amount: uint256
+    amplification: uint256
+
+event StartRamp:
+    epoch: indexed(uint256)
+
+event SetValue:
+    field: indexed(uint256)
+    value: uint256
+
+event SetExecutor:
+    executor: indexed(address)
+
+event SetOperator:
+    operator: indexed(address)
+
 event PendingManagement:
     management: indexed(address)
 
@@ -133,6 +154,7 @@ def execute(_lower: uint256, _upper: uint256, _amount: uint256, _amplification: 
                 'add_asset(address,address,uint256,uint256,uint256,uint256,uint256,uint256,address)'
             )
         )
+        log AddAsset(epoch, winner, _lower, _upper, _amount, _amplification)
         Executor(self.executor).execute_single(pool, data)        
     else:
         num_assets -= 1
@@ -148,56 +170,66 @@ def execute(_lower: uint256, _upper: uint256, _amount: uint256, _amplification: 
         self.target_amplification, weights, self.ramp_duration, 
         method_id=method_id('set_ramp(uint256,uint256[],uint256)')
     )
+    log StartRamp(epoch)
     Executor(self.executor).execute_single(pool, data)
 
 @external
 def set_target_amplification(_target: uint256):
     assert msg.sender == self.management
     self.target_amplification = _target
+    log SetValue(0, _target)
 
 @external
 def set_executor(_executor: address):
     assert msg.sender == self.management
     assert _executor != empty(address)
     self.executor = _executor
+    log SetExecutor(_executor)
 
 @external
 def set_operator(_operator: address):
-    assert msg.sender == self.management
+    assert msg.sender == self.management or msg.sender == self.operator
     assert _operator != empty(address)
     self.operator = _operator
+    log SetOperator(_operator)
 
 @external
 def set_initial_weight(_weight: uint256):
     assert msg.sender == self.management
     self.initial_weight = _weight
+    log SetValue(1, _weight)
 
 @external
 def set_ramp_weight(_weight: uint256):
     assert msg.sender == self.management
     self.ramp_weight = _weight
+    log SetValue(2, _weight)
 
 @external
 def set_redistribute_weight(_weight: uint256):
     assert msg.sender == self.management
     self.redistribute_weight = _weight
+    log SetValue(3, _weight)
 
 @external
 def set_ramp_duration(_duration: uint256):
     assert msg.sender == self.management
     self.ramp_duration = _duration
+    log SetValue(4, _duration)
 
 @external
 def set_inclusion_vote(_inclusion: address):
     assert msg.sender == self.management
     assert _inclusion != empty(address)
     self.inclusion_vote = _inclusion
+    log SetValue(5, convert(_inclusion, uint256))
 
 @external
 def set_weight_vote(_weight: address):
     assert msg.sender == self.management
     assert _weight != empty(address)
     self.weight_vote = _weight
+    log SetValue(6, convert(_weight, uint256))
 
 @external
 def set_management(_management: address):

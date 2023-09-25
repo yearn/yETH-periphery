@@ -14,7 +14,7 @@ interface Measure:
 genesis: public(immutable(uint256))
 management: public(address)
 pending_management: public(address)
-whitelister: public(address)
+operator: public(address)
 treasury: public(address)
 measure: public(address)
 enabled: public(bool)
@@ -34,6 +34,46 @@ winner_rate_providers: public(HashMap[uint256, address]) # epoch => winner rate 
 fee_token: public(address)
 initial_fee: public(uint256)
 subsequent_fee: public(uint256)
+
+event Apply:
+    epoch: indexed(uint256)
+    token: indexed(address)
+    account: address
+
+event Whitelist:
+    epoch: indexed(uint256)
+    token: indexed(address)
+    idx: uint256
+
+event Vote:
+    epoch: indexed(uint256)
+    account: indexed(address)
+    weight: uint256
+    votes: DynArray[uint256, 33]
+
+event Finalize:
+    epoch: indexed(uint256)
+    winner: indexed(address)
+
+event SetRateProvider:
+    token: indexed(address)
+    provider: address
+
+event Enable:
+    enabled: bool
+
+event SetOperator:
+    operator: indexed(address)
+
+event SetTreasury:
+    treasury: indexed(address)
+
+event SetFeeToken:
+    fee_token: indexed(address)
+
+event SetFees:
+    initial: uint256
+    subsequent: uint256
 
 event SetMeasure:
     measure: indexed(address)
@@ -57,18 +97,15 @@ def __init__(_genesis: uint256, _measure: address, _fee_token: address):
 
     genesis = _genesis
     self.management = msg.sender
-    self.whitelister = msg.sender
+    self.operator = msg.sender
+    self.treasury = msg.sender
     self.measure = _measure
     self.enabled = True
-    self.treasury = msg.sender
     self.fee_token = _fee_token
     
     epoch: uint256 = self._epoch()
     assert epoch > 0
     self.latest_finalized_epoch = epoch - 1
-
-    log SetManagement(msg.sender)
-    log SetMeasure(_measure)
 
 @external
 @view
@@ -124,6 +161,7 @@ def apply(_token: address):
         fee = self.subsequent_fee
     if fee > 0:
         assert ERC20(self.fee_token).transferFrom(msg.sender, self, fee, default_return_value=True)
+    log Apply(epoch, _token, msg.sender)
 
 @internal
 def _whitelist(_epoch: uint256, _token: address):
@@ -131,6 +169,7 @@ def _whitelist(_epoch: uint256, _token: address):
     self.num_candidates[_epoch] = n
     self.candidates[_epoch][n] = _token
     self.candidates_map[_epoch][_token] = n
+    log Whitelist(_epoch, _token, n)
 
 @external
 def vote(_votes: DynArray[uint256, 33]):
@@ -160,6 +199,7 @@ def vote(_votes: DynArray[uint256, 33]):
         total += _votes[i]
 
     assert total == VOTE_SCALE
+    log Vote(epoch, msg.sender, weight, _votes)
 
 @external
 def finalize_epoch():
@@ -179,7 +219,7 @@ def finalize_epoch():
         if votes > winner_votes:
             candidate: address = self.candidates[epoch][i]
             if self.rate_providers[candidate] in [empty(address), APPLICATION_DISABLED]:
-                # whitelister could have unset rate provider after whitelist
+                # operator could have unset rate provider after
                 continue
             winner = candidate
             winner_votes = votes
@@ -188,11 +228,13 @@ def finalize_epoch():
     self.winner_rate_providers[epoch] = self.rate_providers[winner]
     self.rate_providers[winner] = APPLICATION_DISABLED
     self.latest_finalized_epoch = epoch
+    log Finalize(epoch, winner)
 
 @external
 def set_rate_provider(_token: address, _provider: address):
-    assert msg.sender == self.whitelister
+    assert msg.sender == self.operator
     self.rate_providers[_token] = _provider
+    log SetRateProvider(_token, _provider)
 
     epoch: uint256 = self._epoch()
     if _provider not in [empty(address), APPLICATION_DISABLED] and \
@@ -209,14 +251,16 @@ def sweep(_token: address, _recipient: address = msg.sender):
         assert ERC20(_token).transfer(_recipient, amount, default_return_value=True)
 
 @external
-def set_whitelister(_whitelister: address):
-    assert msg.sender == self.management or msg.sender == self.whitelister
-    self.whitelister = _whitelister
+def set_operator(_operator: address):
+    assert msg.sender == self.management or msg.sender == self.operator
+    self.operator = _operator
+    log SetOperator(_operator)
 
 @external
 def set_treasury(_treasury: address):
     assert msg.sender == self.management or msg.sender == self.treasury
     self.treasury = _treasury
+    log SetTreasury(_treasury)
 
 @external
 def set_measure(_measure: address):
@@ -230,23 +274,27 @@ def set_measure(_measure: address):
 def enable():
     assert msg.sender == self.management
     self.enabled = True
+    log Enable(True)
 
 @external
 def disable():
     assert msg.sender == self.management
     self.enabled = False
+    log Enable(False)
 
 @external
 def set_application_fee_token(_token: address):
     assert msg.sender == self.management
     assert _token != empty(address)
     self.fee_token = _token
+    log SetFeeToken(_token)
 
 @external
 def set_application_fees(_initial: uint256, _subsequent: uint256):
     assert msg.sender == self.management
     self.initial_fee = _initial
     self.subsequent_fee = _subsequent
+    log SetFees(_initial, _subsequent)
 
 @external
 def set_management(_management: address):

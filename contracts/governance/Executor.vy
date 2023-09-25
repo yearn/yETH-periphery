@@ -12,9 +12,9 @@ enum Access:
     WHITELIST
     BLACKLIST
 
+proxy: public(immutable(Proxy))
 management: public(address)
 pending_management: public(address)
-proxy: public(address)
 governors: public(HashMap[address, bool])
 access: public(HashMap[uint256, Access]) # target => access control setting
 whitelisted: HashMap[uint256, HashMap[address, bool]] # target => governor => whitelisted
@@ -36,6 +36,18 @@ event SetAccess:
     identifier: indexed(bytes4)
     access: Access
 
+event Whitelist:
+    contract: indexed(address)
+    identifier: indexed(bytes4)
+    by: indexed(address)
+    whitelisted: bool
+
+event Blacklist:
+    contract: indexed(address)
+    identifier: indexed(bytes4)
+    by: indexed(address)
+    blacklisted: bool
+
 event PendingManagement:
     management: indexed(address)
 
@@ -47,10 +59,9 @@ IDENTIFIER_MASK: constant(uint256) = shift(1, 32) - 1
 
 @external
 def __init__(_proxy: address):
+    proxy = Proxy(_proxy)
     self.management = msg.sender
-    self.proxy = _proxy
     self.governors[msg.sender] = True
-    log SetManagement(msg.sender)
 
 @external
 def execute_single(_to: address, _data: Bytes[2048]):
@@ -66,7 +77,7 @@ def execute_single(_to: address, _data: Bytes[2048]):
     elif access == Access.WHITELIST:
         assert self.whitelisted[target][msg.sender]
 
-    Proxy(self.proxy).execute(_to, _data)
+    proxy.execute(_to, _data)
     log Execute(msg.sender, _to, _data)
 
 @external
@@ -102,7 +113,7 @@ def execute(_script: Bytes[65536]):
         i += size
         assert i <= len(_script)
 
-        Proxy(self.proxy).execute(contract, calldata)
+        proxy.execute(contract, calldata)
         log Execute(msg.sender, contract, calldata)
 
     assert i == len(_script)
@@ -113,12 +124,6 @@ def script(_to: address, _data: Bytes[2048]) -> Bytes[2080]:
     assert len(_data) >= 4
     prefix: uint256 = shift(len(_data), 160) | convert(_to, uint256)
     return concat(convert(convert(prefix, uint224), bytes28), _data)
-
-@external
-def set_proxy(_proxy: address):
-    assert msg.sender == self.management
-    assert _proxy != empty(address)
-    self.proxy = _proxy
 
 @external
 def set_governor(_governor: address, _flag: bool):
@@ -138,6 +143,7 @@ def whitelist(_contract: address, _identifier: bytes4, _caller: address, _whitel
     assert msg.sender == self.management
     target: uint256 = self._pack_target(_contract, _identifier)
     self.whitelisted[target][_caller] = _whitelisted
+    log Whitelist(_contract, _identifier, _caller, _whitelisted)
 
 @external
 @view
@@ -156,6 +162,7 @@ def blacklist(_contract: address, _identifier: bytes4, _caller: address, _blackl
     assert msg.sender == self.management
     target: uint256 = self._pack_target(_contract, _identifier)
     self.blacklisted[target][_caller] = _blacklisted
+    log Blacklist(_contract, _identifier, _caller, _blacklisted)
 
 @external
 @view

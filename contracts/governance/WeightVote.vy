@@ -25,6 +25,12 @@ votes: public(HashMap[uint256, uint256[33]]) # epoch => [blank vote, ..protocol 
 votes_user: public(HashMap[address, HashMap[uint256, uint256[33]]]) # user => epoch => [blank vote, ..protocol votes..]
 voted: public(HashMap[address, HashMap[uint256, bool]]) # user => epoch => voted?
 
+event Vote:
+    epoch: indexed(uint256)
+    account: indexed(address)
+    weight: uint256
+    votes: DynArray[uint256, 33]
+
 event SetMeasure:
     measure: indexed(address)
 
@@ -50,9 +56,6 @@ def __init__(_genesis: uint256, _pool: address, _measure: address):
     pool = _pool
     self.management = msg.sender
     self.measure = _measure
-
-    log SetManagement(msg.sender)
-    log SetMeasure(_measure)
 
 @external
 @view
@@ -105,6 +108,7 @@ def vote(_votes: DynArray[uint256, 33]):
         total += _votes[i]
 
     assert total == VOTE_SCALE
+    log Vote(epoch, msg.sender, weight, _votes)
 
 @external
 def set_measure(_measure: address):

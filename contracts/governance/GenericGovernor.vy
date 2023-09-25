@@ -41,6 +41,37 @@ event Propose:
     author: indexed(address)
     script: Bytes[65536]
 
+event Retract:
+    idx: indexed(uint256)
+
+event Cancel:
+    idx: indexed(uint256)
+
+event Vote:
+    account: indexed(address)
+    idx: indexed(uint256)
+    yea: uint256
+    nay: uint256
+
+event Enact:
+    idx: indexed(uint256)
+    by: indexed(address)
+
+event SetMeasure:
+    measure: indexed(address)
+
+event SetExecutor:
+    executor: indexed(address)
+
+event SetDelay:
+    delay: uint256
+
+event SetMajority:
+    majority: uint256
+
+event SetProposeMinWeight:
+    min_weight: uint256
+
 event PendingManagement:
     management: indexed(address)
 
@@ -164,6 +195,7 @@ def retract(_idx: uint256):
     state: uint256 = self._proposal_state(_idx)
     assert state == STATE_PROPOSED
     self.proposals[_idx].state = STATE_RETRACTED
+    log Retract(_idx)
 
 @external
 def cancel(_idx: uint256):
@@ -171,6 +203,7 @@ def cancel(_idx: uint256):
     state: uint256 = self._proposal_state(_idx)
     assert state == STATE_PROPOSED or state == STATE_PASSED
     self.proposals[_idx].state = STATE_CANCELLED
+    log Cancel(_idx)
 
 @external
 def vote_yea(_idx: uint256):
@@ -195,18 +228,24 @@ def _vote(_idx: uint256, _yea: uint256, _nay: uint256):
     weight: uint256 = Measure(self.measure).vote_weight(msg.sender)
     assert weight > 0
     self.voted[msg.sender][_idx] = True
+    yea: uint256 = 0
     if _yea > 0:
-        self.proposals[_idx].yea += weight * _yea / VOTE_SCALE
+        yea = weight * _yea / VOTE_SCALE
+        self.proposals[_idx].yea += yea
+    nay: uint256 = 0
     if _nay > 0:
-        self.proposals[_idx].nay += weight * _nay / VOTE_SCALE
+        nay = weight * _nay / VOTE_SCALE
+        self.proposals[_idx].nay += nay
+    log Vote(msg.sender, _idx, yea, nay)
 
 @external
-def execute(_idx: uint256, _script: Bytes[65536]):
+def enact(_idx: uint256, _script: Bytes[65536]):
     assert self._proposal_state(_idx) == STATE_PASSED
     assert keccak256(_script) == self.proposals[_idx].hash
     assert (block.timestamp - genesis) % EPOCH_LENGTH >= self.delay
 
     self.proposals[_idx].state = STATE_ENACTED
+    log Enact(_idx, msg.sender)
     Executor(self.executor).execute(_script)
 
 @external
@@ -214,29 +253,34 @@ def set_measure(_measure: address):
     assert msg.sender == self.management
     assert _measure != empty(address)
     self.measure = _measure
+    log SetMeasure(_measure)
 
 @external
 def set_executor(_executor: address):
     assert msg.sender == self.management
     assert _executor != empty(address)
     self.executor = _executor
+    log SetExecutor(_executor)
 
 @external
 def set_delay(_delay: uint256):
     assert msg.sender == self.management
     assert _delay <= VOTE_START
     self.delay = _delay
+    log SetDelay(_delay)
 
 @external
 def set_majority(_majority: uint256):
     assert msg.sender == self.management
     assert _majority <= VOTE_SCALE
     self.majority = _majority
+    log SetMajority(_majority)
 
 @external
 def set_propose_min_weight(_propose_min_weight: uint256):
     assert msg.sender == self.management
     self.propose_min_weight = _propose_min_weight
+    log SetProposeMinWeight(_propose_min_weight)
 
 @external
 def set_management(_management: address):

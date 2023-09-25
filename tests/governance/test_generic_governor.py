@@ -270,13 +270,13 @@ def test_execute(chain, alice, bob, measure, token, governor, script):
 
     # execute
     assert token.balanceOf(alice) == 0
-    governor.execute(idx, script, sender=bob)
+    governor.enact(idx, script, sender=bob)
     assert token.balanceOf(alice) == UNIT
     assert governor.proposal_state(idx) == STATE_ENACTED
 
     # can only execute once
     with ape.reverts():
-        governor.execute(idx, script, sender=bob)
+        governor.enact(idx, script, sender=bob)
 
 def test_execute_different(chain, alice, bob, measure, proxy, executor, token, governor, script):
     idx = governor.propose(script, sender=alice).return_value
@@ -290,8 +290,8 @@ def test_execute_different(chain, alice, bob, measure, proxy, executor, token, g
     transfer = token.transfer.encode_input(bob, UNIT)
     script2 = executor.script(token, mint) + executor.script(token, transfer)
     with ape.reverts():
-        governor.execute(idx, script2, sender=bob)
-    governor.execute(idx, script, sender=bob)
+        governor.enact(idx, script2, sender=bob)
+    governor.enact(idx, script, sender=bob)
 
 def test_execute_delay(chain, deployer, alice, bob, measure, token, governor, script):
     governor.set_delay(3600, sender=deployer)
@@ -304,11 +304,11 @@ def test_execute_delay(chain, deployer, alice, bob, measure, token, governor, sc
     # cant execute before delay
     chain.pending_timestamp += WEEK
     with ape.reverts():
-        governor.execute(idx, script, sender=bob)
+        governor.enact(idx, script, sender=bob)
 
     chain.pending_timestamp += 3600
     assert token.balanceOf(alice) == 0
-    governor.execute(idx, script, sender=bob)
+    governor.enact(idx, script, sender=bob)
     assert token.balanceOf(alice) == UNIT
     assert governor.proposal_state(idx) == STATE_ENACTED
 
@@ -323,7 +323,7 @@ def test_execute_retracted(chain, alice, bob, measure, governor, script):
     # cant execute
     chain.pending_timestamp += WEEK
     with ape.reverts():
-        governor.execute(idx, script, sender=bob)
+        governor.enact(idx, script, sender=bob)
 
 def test_execute_cancelled(chain, deployer, alice, bob, measure, governor, script):
     idx = governor.propose(script, sender=alice).return_value
@@ -335,7 +335,7 @@ def test_execute_cancelled(chain, deployer, alice, bob, measure, governor, scrip
     chain.pending_timestamp += WEEK
     governor.cancel(idx, sender=deployer)
     with ape.reverts():
-        governor.execute(idx, script, sender=bob)
+        governor.enact(idx, script, sender=bob)
 
 def test_management_proxy(chain, deployer, alice, bob, measure, proxy, executor, governor):
     # transfer executor+governor management to proxy
@@ -364,25 +364,25 @@ def test_management_proxy(chain, deployer, alice, bob, measure, proxy, executor,
     # cannot add governor before accepting executor management
     chain.pending_timestamp += WEEK
     with ape.reverts():
-        governor.execute(idx_set_governor, set_governor, sender=bob)
+        governor.enact(idx_set_governor, set_governor, sender=bob)
 
     # execute in correct order
     assert executor.management() == deployer.address
-    governor.execute(idx_accept1, accept1, sender=bob)
+    governor.enact(idx_accept1, accept1, sender=bob)
     assert executor.management() == proxy.address
     assert not executor.governors(alice)
-    governor.execute(idx_set_governor, set_governor, sender=bob)
+    governor.enact(idx_set_governor, set_governor, sender=bob)
     assert executor.governors(alice)
 
     # cannot set delay before accepting governor management
     chain.pending_timestamp += WEEK
     with ape.reverts():
-        governor.execute(idx_delay, delay, sender=bob)
+        governor.enact(idx_delay, delay, sender=bob)
 
     # execute in correct order
     assert governor.management() == deployer.address
-    governor.execute(idx_accept2, accept2, sender=bob)
+    governor.enact(idx_accept2, accept2, sender=bob)
     assert governor.management() == proxy.address
     assert governor.delay() == 0
-    governor.execute(idx_delay, delay, sender=bob)
+    governor.enact(idx_delay, delay, sender=bob)
     assert governor.delay() == 3600

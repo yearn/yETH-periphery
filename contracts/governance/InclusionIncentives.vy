@@ -27,6 +27,41 @@ user_claimed: public(HashMap[address, HashMap[uint256, HashMap[address, bool]]])
 deposit_deadline: public(uint256)
 claim_deadline: public(uint256)
 
+event Deposit:
+    epoch: indexed(uint256)
+    candidate: indexed(address)
+    token: indexed(address)
+    amount: uint256
+    depositor: address
+
+event Claim:
+    epoch: indexed(uint256)
+    token: indexed(address)
+    amount: uint256
+    account: indexed(address)
+
+event Refund:
+    epoch: indexed(uint256)
+    candidate: indexed(address)
+    token: indexed(address)
+    amount: uint256
+    depositor: address
+
+event Sweep:
+    epoch: indexed(uint256)
+    token: indexed(address)
+    amount: uint256
+    recipient: address
+
+event SetTreasury:
+    treasury: indexed(address)
+
+event SetDepositDeadline:
+    deadline: uint256
+
+event SetClaimDeadline:
+    deadline: uint256
+
 event PendingManagement:
     management: indexed(address)
 
@@ -66,6 +101,7 @@ def deposit(_candidate: address, _token: address, _amount: uint256):
     self.unclaimed[epoch][_token] += _amount
 
     assert ERC20(_token).transferFrom(msg.sender, self, _amount, default_return_value=True)
+    log Deposit(epoch, _candidate, _token, _amount, msg.sender)
 
 @external
 @view
@@ -107,6 +143,7 @@ def _claim(_epoch: uint256, _token: address, _account: address):
     self.unclaimed[_epoch][_token] -= amount
 
     assert ERC20(_token).transfer(_account, amount, default_return_value=True)
+    log Claim(_epoch, _token, amount, _account)
 
 @external
 @view
@@ -127,6 +164,7 @@ def refund(_epoch: uint256, _candidate: address, _token: address, _depositor: ad
     self.unclaimed[_epoch][_token] -= amount
 
     assert ERC20(_token).transfer(_depositor, amount, default_return_value=True)
+    log Refund(_epoch, _candidate, _token, amount, _depositor)
 
 @external
 @view
@@ -145,24 +183,28 @@ def sweep(_epoch: uint256, _token: address, _recipient: address = msg.sender):
     self.unclaimed[_epoch][_token] = 0
 
     assert ERC20(_token).transfer(_recipient, amount, default_return_value=True)
+    log Sweep(_epoch, _token, amount, _recipient)
 
 @external
 def set_treasury(_treasury: address):
     assert msg.sender == self.management or msg.sender == self.treasury
     assert _treasury != empty(address)
     self.treasury = _treasury
+    log SetTreasury(_treasury)
 
 @external
 def set_deposit_deadline(_deadline: uint256):
     assert msg.sender == self.management
     assert _deadline <= EPOCH_LENGTH
     self.deposit_deadline = _deadline
+    log SetDepositDeadline(_deadline)
 
 @external
 def set_claim_deadline(_deadline: uint256):
     assert msg.sender == self.management
     assert _deadline >= 1
     self.claim_deadline = _deadline
+    log SetClaimDeadline(_deadline)
 
 @external
 def set_management(_management: address):

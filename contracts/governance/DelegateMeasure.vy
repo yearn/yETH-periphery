@@ -28,6 +28,13 @@ delegate_multiplier: public(uint256)
 delegator: public(HashMap[address, address]) # account => delegate to
 delegated: public(HashMap[address, address]) # account => delegated from
 
+event SetDelegateMultiplier:
+    multiplier: uint256
+
+event Delegate:
+    account: indexed(address)
+    receiver: indexed(address)
+
 event PendingManagement:
     management: indexed(address)
 
@@ -91,6 +98,7 @@ def set_delegate_multiplier(_multiplier: uint256):
     assert msg.sender == self.management
     assert _multiplier <= DELEGATE_SCALE
     self.delegate_multiplier = _multiplier
+    log SetDelegateMultiplier(_multiplier)
 
 @external
 def delegate(_account: address, _receiver: address):
@@ -104,6 +112,7 @@ def delegate(_account: address, _receiver: address):
     if _receiver != empty(address):
         assert self.delegated[_receiver] == empty(address)
         self.delegated[_receiver] = _account
+    log Delegate(_account, _receiver)
 
 @external
 def set_management(_management: address):
