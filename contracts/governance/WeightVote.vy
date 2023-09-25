@@ -22,7 +22,7 @@ measure: public(address)
 num_assets: public(HashMap[uint256, uint256])
 total_votes: public(HashMap[uint256, uint256]) # epoch => total votes
 votes: public(HashMap[uint256, uint256[33]]) # epoch => [blank vote, ..protocol votes..]
-votes_user: public(HashMap[address, HashMap[uint256, uint256[33]]]) # user => epoch => protocol idx => votes
+votes_user: public(HashMap[address, HashMap[uint256, uint256[33]]]) # user => epoch => [blank vote, ..protocol votes..]
 voted: public(HashMap[address, HashMap[uint256, bool]]) # user => epoch => voted?
 
 event SetMeasure:
@@ -88,6 +88,7 @@ def vote(_votes: DynArray[uint256, 33]):
     assert len(_votes) <= n + 1
 
     weight: uint256 = Measure(self.measure).vote_weight(msg.sender)
+    assert weight > 0
     self.total_votes[epoch] += weight
     self.voted[msg.sender][epoch] = True
 

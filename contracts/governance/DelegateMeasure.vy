@@ -68,7 +68,7 @@ def vote_weight(_account: address) -> uint256:
     @param _account Account to get vote weight for
     @return Account vote weight
     """
-    if self.delegator[_account] != empty(address):
+    if self.delegator[_account] != empty(address) and self.delegate_multiplier > 0:
         return 0
 
     weight: uint256 = Bootstrap(bootstrap).deposits(_account)

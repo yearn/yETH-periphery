@@ -9,6 +9,7 @@ from vyper.interfaces import ERC20
 
 interface Pool:
     def num_assets() -> uint256: view
+    def amplification() -> uint256: view
     def weight(_idx: uint256) -> uint256: view
 
 interface InclusionVote:
@@ -28,6 +29,7 @@ pool: public(immutable(address))
 management: public(address)
 pending_management: public(address)
 executor: public(address)
+operator: public(address)
 initial_weight: public(uint256)
 ramp_weight: public(uint256)
 redistribute_weight: public(uint256)
@@ -48,17 +50,18 @@ APPLICATION_DISABLED: constant(address) = 0x000000000000000000000000000000000000
 PRECISION: constant(uint256) = 10**18
 
 @external
-def __init__(_genesis: uint256, _pool: address):
+def __init__(_genesis: uint256, _pool: address, _executor: address):
     genesis = _genesis
     pool = _pool
     self.management = msg.sender
-    self.executor = msg.sender
+    self.executor = _executor
+    self.operator = msg.sender
 
     self.latest_executed_epoch = self._epoch() - 1
     self.initial_weight = PRECISION / 10_000
     self.ramp_weight = PRECISION / 100
     self.redistribute_weight = PRECISION / 10
-    self.target_amplification = 450 * PRECISION
+    self.target_amplification = Pool(pool).amplification()
     self.ramp_duration = 7 * 24 * 60 * 60
 
 @external
@@ -75,31 +78,15 @@ def _epoch() -> uint256:
 def execute(_lower: uint256, _upper: uint256, _amount: uint256, _amplification: uint256, _min_lp_amount: uint256):
     epoch: uint256 = self._epoch() - 1
     iv: InclusionVote = InclusionVote(self.inclusion_vote)
-    assert msg.sender == self.executor
+    assert msg.sender == self.operator
     assert self.latest_executed_epoch < epoch
     assert iv.latest_finalized_epoch() == epoch
     self.latest_executed_epoch = epoch
 
-    # add new asset to the pool
     num_assets: uint256 = Pool(pool).num_assets()
     winner: address = iv.winners(epoch)
     provider: address = iv.winner_rate_providers(epoch)
-    included: bool = False
-    if winner != empty(address) and provider not in [empty(address), APPLICATION_DISABLED]:
-        # approve spending of winning token
-        # assume that token was transferred to ultimate executor prior to calling this function
-        included = True
-        data: Bytes[2048] = _abi_encode(pool, _amount, method_id=method_id('approve(address,uint256)'))
-        Executor(self.executor).execute_single(winner, data)
-
-        data = _abi_encode(
-            winner, provider, self.initial_weight, _lower, _upper, _amount, 
-            _amplification, _min_lp_amount, msg.sender,
-            method_id=method_id(
-                'add_asset(address,address,uint256,uint256,uint256,uint256,uint256,uint256,address)'
-            )
-        )
-        Executor(self.executor).execute_single(pool, data)
+    included: bool = winner != empty(address) and provider not in [empty(address), APPLICATION_DISABLED]
 
     # calculate weight to redistribute, taking into account blank votes
     v: WeightVote = WeightVote(self.weight_vote)
@@ -109,7 +96,7 @@ def execute(_lower: uint256, _upper: uint256, _amount: uint256, _amplification: 
         blank: uint256 = v.votes(epoch, 0)
         redistribute = self.redistribute_weight * (total_votes - blank) / total_votes
         total_votes -= blank
-    elif not included:
+    if total_votes == 0 and not included:
         # no votes, no new asset
         return
     left: uint256 = redistribute
@@ -120,7 +107,7 @@ def execute(_lower: uint256, _upper: uint256, _amount: uint256, _amplification: 
     # calculate new weights
     weights: DynArray[uint256, 32] = []
     total_weight: uint256 = 0
-    for i in range(1, 32):
+    for i in range(32):
         if i == num_assets:
             break
         weight: uint256 = Pool(pool).weight(i) * left / PRECISION
@@ -131,6 +118,22 @@ def execute(_lower: uint256, _upper: uint256, _amount: uint256, _amplification: 
 
     if included:
         weights.append(self.ramp_weight)
+        total_weight += self.ramp_weight
+
+        # approve spending of winning token
+        # assume that token was transferred to ultimate executor prior to calling this function    
+        data: Bytes[2048] = _abi_encode(pool, _amount, method_id=method_id('approve(address,uint256)'))
+        Executor(self.executor).execute_single(winner, data)
+
+        # add new asset to pool
+        data = _abi_encode(
+            winner, provider, self.initial_weight, _lower, _upper, _amount, 
+            _amplification, _min_lp_amount, msg.sender,
+            method_id=method_id(
+                'add_asset(address,address,uint256,uint256,uint256,uint256,uint256,uint256,address)'
+            )
+        )
+        Executor(self.executor).execute_single(pool, data)        
     else:
         num_assets -= 1
     
@@ -140,7 +143,7 @@ def execute(_lower: uint256, _upper: uint256, _amount: uint256, _amplification: 
     else:
         weights[num_assets] += PRECISION - total_weight
 
-    # esxecute ramp
+    # execute ramp
     data: Bytes[2048] = _abi_encode(
         self.target_amplification, weights, self.ramp_duration, 
         method_id=method_id('set_ramp(uint256,uint256[],uint256)')
@@ -157,6 +160,12 @@ def set_executor(_executor: address):
     assert msg.sender == self.management
     assert _executor != empty(address)
     self.executor = _executor
+
+@external
+def set_operator(_operator: address):
+    assert msg.sender == self.management
+    assert _operator != empty(address)
+    self.operator = _operator
 
 @external
 def set_initial_weight(_weight: uint256):

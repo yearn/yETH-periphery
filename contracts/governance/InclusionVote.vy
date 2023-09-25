@@ -5,6 +5,8 @@
 @license GNU AGPLv3
 """
 
+from vyper.interfaces import ERC20
+
 interface Measure:
     def total_vote_weight() -> uint256: view
     def vote_weight(_account: address) -> uint256: view
@@ -15,6 +17,7 @@ pending_management: public(address)
 whitelister: public(address)
 treasury: public(address)
 measure: public(address)
+enabled: public(bool)
 latest_finalized_epoch: public(uint256)
 num_candidates: public(HashMap[uint256, uint256]) # epoch => number of candidates
 candidates: public(HashMap[uint256, address[33]]) # epoch => [candidate]
@@ -25,12 +28,12 @@ rate_providers: public(HashMap[address, address]) # candidate => rate provider
 total_votes: public(HashMap[uint256, uint256]) # epoch => total votes
 votes: public(HashMap[uint256, uint256[33]]) # epoch => candidate idx => votes
 votes_user: public(HashMap[address, HashMap[uint256, uint256]]) # user => epoch => votes
-winners: HashMap[uint256, address] # epoch => winner
-winners_idx: HashMap[uint256, uint256] # epoch => winner idx
-winner_rate_providers: HashMap[uint256, address] # epoch => winner rate provider
+winners: public(HashMap[uint256, address]) # epoch => winner
+winner_rate_providers: public(HashMap[uint256, address]) # epoch => winner rate provider
 
-initial_application_fee: public(uint256)
-subsequent_application_fee: public(uint256)
+fee_token: public(address)
+initial_fee: public(uint256)
+subsequent_fee: public(uint256)
 
 event SetMeasure:
     measure: indexed(address)
@@ -49,14 +52,16 @@ VOTE_SCALE: constant(uint256) = 10_000
 APPLICATION_DISABLED: constant(address) = 0x0000000000000000000000000000000000000001
 
 @external
-def __init__(_genesis: uint256, _measure: address):
+def __init__(_genesis: uint256, _measure: address, _fee_token: address):
     assert _genesis <= block.timestamp
 
     genesis = _genesis
     self.management = msg.sender
     self.whitelister = msg.sender
     self.measure = _measure
+    self.enabled = True
     self.treasury = msg.sender
+    self.fee_token = _fee_token
     
     epoch: uint256 = self._epoch()
     assert epoch > 0
@@ -77,6 +82,11 @@ def _epoch() -> uint256:
 
 @external
 @view
+def apply_open() -> bool:
+    return not self._vote_open()
+
+@external
+@view
 def vote_open() -> bool:
     return self._vote_open()
 
@@ -86,28 +96,34 @@ def _vote_open() -> bool:
     return (block.timestamp - genesis) % EPOCH_LENGTH >= VOTE_START
 
 @external
-@payable
+@view
+def has_applied(_token: address) -> bool:
+    return self.applications[_token] == self._epoch()
+
+@external
 def apply(_token: address):
     epoch: uint256 = self._epoch()
     assert self.latest_finalized_epoch == epoch - 1
     assert self.num_candidates[epoch] < 32
     assert not self._vote_open()
+    assert self.enabled
 
-    fee: uint256 = 0
     application_epoch: uint256 = self.applications[_token]
     assert epoch > application_epoch, "already applied"
     self.applications[_token] = epoch
-
-    if application_epoch == 0:
-        fee = self.initial_application_fee
-    else:
-        fee = self.subsequent_application_fee
-    assert msg.value == fee
 
     provider: address = self.rate_providers[_token]
     assert provider != APPLICATION_DISABLED
     if provider != empty(address):
         self._whitelist(epoch, _token)
+
+    fee: uint256 = 0
+    if application_epoch == 0:
+        fee = self.initial_fee
+    else:
+        fee = self.subsequent_fee
+    if fee > 0:
+        assert ERC20(self.fee_token).transferFrom(msg.sender, self, fee, default_return_value=True)
 
 @internal
 def _whitelist(_epoch: uint256, _token: address):
@@ -121,6 +137,7 @@ def vote(_votes: DynArray[uint256, 33]):
     epoch: uint256 = self._epoch()
     assert self._vote_open()
     assert self.votes_user[msg.sender][epoch] == 0
+    assert self.enabled
 
     n: uint256 = self.num_candidates[epoch] + 1
     assert len(_votes) <= n
@@ -148,8 +165,10 @@ def vote(_votes: DynArray[uint256, 33]):
 def finalize_epoch():
     epoch: uint256 = self.latest_finalized_epoch + 1
     if epoch >= self._epoch():
+        # nothing to finalize
         return
 
+    # find candidate with most votes
     n: uint256 = self.num_candidates[epoch] + 1
     winner: address = empty(address)
     winner_votes: uint256 = 0
@@ -160,6 +179,7 @@ def finalize_epoch():
         if votes > winner_votes:
             candidate: address = self.candidates[epoch][i]
             if self.rate_providers[candidate] in [empty(address), APPLICATION_DISABLED]:
+                # whitelister could have unset rate provider after whitelist
                 continue
             winner = candidate
             winner_votes = votes
@@ -177,24 +197,25 @@ def set_rate_provider(_token: address, _provider: address):
     epoch: uint256 = self._epoch()
     if _provider not in [empty(address), APPLICATION_DISABLED] and \
         self.applications[_token] == epoch and self.num_candidates[epoch] < 32 and \
-        self.candidates_map[epoch][_token] > 0:
+        self.candidates_map[epoch][_token] == 0:
         # whitelist token for vote if it has an application for this epoch
         self._whitelist(epoch, _token)
 
 @external
-def sweep(_recipient: address):
+def sweep(_token: address, _recipient: address = msg.sender):
     assert msg.sender == self.treasury
-    assert self.balance > 0
-    raw_call(_recipient, b"", value=self.balance)
+    amount: uint256 = ERC20(_token).balanceOf(self)
+    if amount > 0:
+        assert ERC20(_token).transfer(_recipient, amount, default_return_value=True)
 
 @external
 def set_whitelister(_whitelister: address):
-    assert msg.sender == self.management
+    assert msg.sender == self.management or msg.sender == self.whitelister
     self.whitelister = _whitelister
 
 @external
 def set_treasury(_treasury: address):
-    assert msg.sender == self.management
+    assert msg.sender == self.management or msg.sender == self.treasury
     self.treasury = _treasury
 
 @external
@@ -206,10 +227,26 @@ def set_measure(_measure: address):
     log SetMeasure(_measure)
 
 @external
+def enable():
+    assert msg.sender == self.management
+    self.enabled = True
+
+@external
+def disable():
+    assert msg.sender == self.management
+    self.enabled = False
+
+@external
+def set_application_fee_token(_token: address):
+    assert msg.sender == self.management
+    assert _token != empty(address)
+    self.fee_token = _token
+
+@external
 def set_application_fees(_initial: uint256, _subsequent: uint256):
     assert msg.sender == self.management
-    self.initial_application_fee = _initial
-    self.subsequent_application_fee = _subsequent
+    self.initial_fee = _initial
+    self.subsequent_fee = _subsequent
 
 @external
 def set_management(_management: address):

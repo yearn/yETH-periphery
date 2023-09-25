@@ -32,8 +32,14 @@ majority: public(uint256)
 propose_min_weight: public(uint256)
 
 num_proposals: public(uint256)
-proposals: public(HashMap[uint256, Proposal])
+proposals: HashMap[uint256, Proposal]
 voted: public(HashMap[address, HashMap[uint256, bool]])
+
+event Propose:
+    idx: indexed(uint256)
+    epoch: indexed(uint256)
+    author: indexed(address)
+    script: Bytes[65536]
 
 event PendingManagement:
     management: indexed(address)
@@ -65,6 +71,7 @@ def __init__(_genesis: uint256, _measure: address, _executor: address):
     self.management = msg.sender
     self.measure = _measure
     self.executor = _executor
+    self.majority = VOTE_SCALE / 2
 
 @external
 @view
@@ -98,6 +105,13 @@ def _vote_open() -> bool:
 
 @external
 @view
+def proposal(_idx: uint256) -> Proposal:
+    proposal: Proposal = self.proposals[_idx]
+    proposal.state = self._proposal_state(_idx)
+    return proposal
+
+@external
+@view
 def proposal_state(_idx: uint256) -> uint256:
     return self._proposal_state(_idx)
 
@@ -124,7 +138,7 @@ def _proposal_state(_idx: uint256) -> uint256:
         yea: uint256 = self.proposals[_idx].yea
         nay: uint256 = self.proposals[_idx].nay
         votes: uint256 = yea + nay
-        if votes > 0 and yea * VOTE_SCALE / votes >= self.majority:
+        if votes > 0 and yea * VOTE_SCALE >= votes * self.majority:
             return STATE_PASSED
 
     return STATE_REJECTED
@@ -134,20 +148,21 @@ def propose(_script: Bytes[65536]) -> uint256:
     assert self._propose_open()
     assert Measure(self.measure).vote_weight(msg.sender) >= self.propose_min_weight
 
+    epoch: uint256 = self._epoch()
     idx: uint256 = self.num_proposals
-    hash: bytes32 = keccak256(_script)
     self.num_proposals = idx + 1
-    self.proposals[idx].epoch = self._epoch()
+    self.proposals[idx].epoch = epoch
     self.proposals[idx].author = msg.sender
     self.proposals[idx].state = STATE_PROPOSED
-    self.proposals[idx].hash = hash
+    self.proposals[idx].hash = keccak256(_script)
+    log Propose(idx, epoch, msg.sender, _script)
     return idx
 
 @external
 def retract(_idx: uint256):
     assert msg.sender == self.proposals[_idx].author
     state: uint256 = self._proposal_state(_idx)
-    assert state == STATE_PROPOSED or state == STATE_PASSED
+    assert state == STATE_PROPOSED
     self.proposals[_idx].state = STATE_RETRACTED
 
 @external
@@ -178,6 +193,7 @@ def _vote(_idx: uint256, _yea: uint256, _nay: uint256):
     assert _yea + _nay == VOTE_SCALE
 
     weight: uint256 = Measure(self.measure).vote_weight(msg.sender)
+    assert weight > 0
     self.voted[msg.sender][_idx] = True
     if _yea > 0:
         self.proposals[_idx].yea += weight * _yea / VOTE_SCALE
