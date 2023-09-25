@@ -3,6 +3,19 @@
 @title Inclusion vote
 @author 0xkorin, Yearn Finance
 @license GNU AGPLv3
+@notice
+    Voting contract for inclusion into the pool.
+    Time is divided in 4 week epochs. During the first three weeks, any user
+    can submit an application on behalf of a token. A fee is potentially charged
+    as an anti spam measure.
+
+    The operator of this contract is tasked with deploying a rate provider for 
+    protocols that have applied. A protocol that has a rate provider and an application
+    is automatically whitelisted for the vote of the current epoch.
+
+    In the final week of the epoch, all users are able to vote on the whitelisted candidates,
+    as well as a 'blank' option, indicating their opposition to all of the candidates.
+    The candidate, if any, with the most amount of votes will be whitelisted by the pool governor.
 """
 
 from vyper.interfaces import ERC20
@@ -93,8 +106,13 @@ APPLICATION_DISABLED: constant(address) = 0x000000000000000000000000000000000000
 
 @external
 def __init__(_genesis: uint256, _measure: address, _fee_token: address):
+    """
+    @notice Constructor
+    @param _genesis Timestamp of start of epoch 0
+    @param _measure Vote weight measure
+    @param _fee_token Application fee token
+    """
     assert _genesis <= block.timestamp
-
     genesis = _genesis
     self.management = msg.sender
     self.operator = msg.sender
@@ -110,35 +128,68 @@ def __init__(_genesis: uint256, _measure: address, _fee_token: address):
 @external
 @view
 def epoch() -> uint256:
+    """
+    @notice Get the current epoch
+    @return Current epoch
+    """
     return self._epoch()
 
 @internal
 @view
 def _epoch() -> uint256:
+    """
+    @notice Get the current epoch
+    """
     return (block.timestamp - genesis) / EPOCH_LENGTH
 
 @external
 @view
 def apply_open() -> bool:
+    """
+    @notice Query whether the application period is currently open
+    @return True: application period is open, False: application period is closed
+    """
     return not self._vote_open()
 
 @external
 @view
 def vote_open() -> bool:
+    """
+    @notice Query whether the vote period is currently open
+    @return True: vote period is open, False: vote period is closed
+    """
     return self._vote_open()
 
 @internal
 @view
 def _vote_open() -> bool:
+    """
+    @notice Query whether the vote period is currently open
+    """
     return (block.timestamp - genesis) % EPOCH_LENGTH >= VOTE_START
 
 @external
 @view
 def has_applied(_token: address) -> bool:
+    """
+    @notice Query whether a token has applied in the current epoch
+    @param _token Token address to query for
+    @return True: token has applied this epoch, False: token has not applied this epoch
+    """
     return self.applications[_token] == self._epoch()
 
 @external
 def apply(_token: address):
+    """
+    @notice
+        Apply for a token to be included into the pool. Each token can only apply once per epoch.
+        Included assets can no longer apply to be included.
+        Charges a fee, dependent on whether the application is the first one 
+        or a follow up in a subsequent epoch.
+        If the token already has a rate provider configured, it will be automatically whitelisted
+        for the voting procedure.
+    @param _token Token address to apply for
+    """
     epoch: uint256 = self._epoch()
     assert self.latest_finalized_epoch == epoch - 1
     assert self.num_candidates[epoch] < 32
@@ -165,6 +216,9 @@ def apply(_token: address):
 
 @internal
 def _whitelist(_epoch: uint256, _token: address):
+    """
+    @notice Whitelist a token, assumes all preconditions are met
+    """
     n: uint256 = self.num_candidates[_epoch] + 1
     self.num_candidates[_epoch] = n
     self.candidates[_epoch][n] = _token
@@ -173,6 +227,13 @@ def _whitelist(_epoch: uint256, _token: address):
 
 @external
 def vote(_votes: DynArray[uint256, 33]):
+    """
+    @notice
+        Vote for preferred candidates. The first entry corresponds to a 'blank' vote,
+        meaning no new asset is to be added to the pool.
+        Votes are in basispoints and must add to 100%
+    @param _votes List of votes in bps
+    """
     epoch: uint256 = self._epoch()
     assert self._vote_open()
     assert self.votes_user[msg.sender][epoch] == 0
@@ -203,6 +264,9 @@ def vote(_votes: DynArray[uint256, 33]):
 
 @external
 def finalize_epoch():
+    """
+    @notice Finalize an epoch, if possible. Will determine the winner of the vote after epoch has ended
+    """
     epoch: uint256 = self.latest_finalized_epoch + 1
     if epoch >= self._epoch():
         # nothing to finalize
@@ -232,6 +296,13 @@ def finalize_epoch():
 
 @external
 def set_rate_provider(_token: address, _provider: address):
+    """
+    @notice
+        Set a rate provider of a token. Will automatically whitelist the token
+        for the vote if there already is an application in this epoch.
+    @param _token Candidate token to set rate provider for
+    @param _provider Rate provider address
+    """
     assert msg.sender == self.operator
     self.rate_providers[_token] = _provider
     log SetRateProvider(_token, _provider)
@@ -245,6 +316,11 @@ def set_rate_provider(_token: address, _provider: address):
 
 @external
 def sweep(_token: address, _recipient: address = msg.sender):
+    """
+    @notice Sweep application fees and other tokens from this contract
+    @param _token Token to sweep
+    @param _recipient Recipient of the swept tokens
+    """
     assert msg.sender == self.treasury
     amount: uint256 = ERC20(_token).balanceOf(self)
     if amount > 0:
@@ -252,18 +328,30 @@ def sweep(_token: address, _recipient: address = msg.sender):
 
 @external
 def set_operator(_operator: address):
+    """
+    @notice Set the operator. The operator is responsible for setting rate providers for the applicants
+    @param _operator New operator address
+    """
     assert msg.sender == self.management or msg.sender == self.operator
     self.operator = _operator
     log SetOperator(_operator)
 
 @external
 def set_treasury(_treasury: address):
+    """
+    @notice Set the treasury. The treasury can sweep (application fee) tokens
+    @param _treasury New treasury address
+    """
     assert msg.sender == self.management or msg.sender == self.treasury
     self.treasury = _treasury
     log SetTreasury(_treasury)
 
 @external
 def set_measure(_measure: address):
+    """
+    @notice Set vote weight measure contract
+    @param _measure New vote weight measure
+    """
     assert msg.sender == self.management
     assert _measure != empty(address)
     assert not self._vote_open()
@@ -272,18 +360,30 @@ def set_measure(_measure: address):
 
 @external
 def enable():
+    """
+    @notice Enable the inclusion vote procedure
+    """
     assert msg.sender == self.management
     self.enabled = True
     log Enable(True)
 
 @external
 def disable():
+    """
+    @notice 
+        Disable the inclusion vote procedure.
+        No new applications are accepted and no-one is allowed to vote
+    """
     assert msg.sender == self.management
     self.enabled = False
     log Enable(False)
 
 @external
 def set_application_fee_token(_token: address):
+    """
+    @notice Set token in which application fees are charged
+    @param _token Token in which fees are charged
+    """
     assert msg.sender == self.management
     assert _token != empty(address)
     self.fee_token = _token
@@ -291,6 +391,11 @@ def set_application_fee_token(_token: address):
 
 @external
 def set_application_fees(_initial: uint256, _subsequent: uint256):
+    """
+    @notice Set application fees
+    @param _initial Initial fee, to be paid on first application
+    @param _subsequent Subsequent fee, to be paid on any follow up application
+    """
     assert msg.sender == self.management
     self.initial_fee = _initial
     self.subsequent_fee = _subsequent

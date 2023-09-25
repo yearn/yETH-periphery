@@ -3,9 +3,19 @@
 @title Ownership proxy
 @author 0xkorin, Yearn Finance
 @license GNU AGPLv3
+@notice
+    Intended owner of all management roles in the entire protocol, outside of its own.
+    Management role is allowed to execute arbitrary calls and is intended to be filled
+    by the executor. This allows for easy upgrading and swapping to a new executor
+    without having to migrate all owned management roles.
 """
 
 management: public(address)
+
+event Execute:
+    by: indexed(address)
+    contract: indexed(address)
+    data: Bytes[2048]
 
 event SetManagement:
     management: indexed(address)
@@ -19,7 +29,13 @@ def __init__():
 
 @external
 def execute(_to: address, _data: Bytes[2048]):
+    """
+    @notice Execute an arbitary function call
+    @param _to Contract to call
+    @param _data Calldata of the call
+    """
     assert msg.sender == self.management
+    log Execute(msg.sender, _to, _data)
     raw_call(_to, _data)
 
 @external

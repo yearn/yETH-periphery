@@ -3,6 +3,11 @@
 @title Vote weight measure with delegation
 @author 0xkorin, Yearn Finance
 @license GNU AGPLv3
+@notice
+    Base voting weight equal to the measure at launch.
+    Management can delegate voting weight from one account to the other,
+    which zeroes out the weight for the origin and adds some weight based on the 
+    token balance to the delegate.
 """
 
 interface Measure:
@@ -61,7 +66,6 @@ def total_vote_weight() -> uint256:
     @notice Get total vote weight
     @return Total vote weight
     @dev
-        Equal to sum of all vote weights at T=inf.
         Care should be taken to use for quorum purposes, as the sum of actual available 
         vote weights will be lower than this due to asymptotical vote weight increase.
     """
@@ -95,6 +99,14 @@ def vote_weight(_account: address) -> uint256:
     
 @external
 def set_delegate_multiplier(_multiplier: uint256):
+    """
+    @notice
+        Set the delegate multiplier, the value by which delegated 
+        voting weight is multipied by.
+    @param _multiplier
+        Delegate multiplier value. 
+        Maximum value is `DELEGATE_SCALE`, which corresponds to one.
+    """
     assert msg.sender == self.management
     assert _multiplier <= DELEGATE_SCALE
     self.delegate_multiplier = _multiplier
@@ -102,6 +114,11 @@ def set_delegate_multiplier(_multiplier: uint256):
 
 @external
 def delegate(_account: address, _receiver: address):
+    """
+    @notice Delegate someones voting weight to someone else
+    @param _account Account to delegate voting weight from
+    @param _receiver Account to delegate voting weight to
+    """
     assert msg.sender == self.management
 
     previous: address = self.delegator[_account]

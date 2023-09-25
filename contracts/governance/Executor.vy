@@ -3,6 +3,12 @@
 @title Executor
 @author 0xkorin, Yearn Finance
 @license GNU AGPLv3
+@notice
+    Responsible for executing governance decisions through a proxy.
+    Only appointed governors are allowed to execute calls, subject to access control based on 
+    the governor, the calling contract and the selector.
+    Management has the power to enable and set/unset whitelists and blacklists.
+    The management role is intended to be transferred to the proxy, making the system self-governing.
 """
 
 interface Proxy:
@@ -59,12 +65,21 @@ IDENTIFIER_MASK: constant(uint256) = shift(1, 32) - 1
 
 @external
 def __init__(_proxy: address):
+    """
+    @notice Constructor
+    @param _proxy The ownership proxy
+    """
     proxy = Proxy(_proxy)
     self.management = msg.sender
     self.governors[msg.sender] = True
 
 @external
 def execute_single(_to: address, _data: Bytes[2048]):
+    """
+    @notice Execute a single call
+    @param _to The contract to call
+    @param _data Calldata
+    """
     assert self.governors[msg.sender]
     assert len(_data) >= 4
     identifier: bytes4 = convert(slice(_data, 0, 4), bytes4)
@@ -82,6 +97,10 @@ def execute_single(_to: address, _data: Bytes[2048]):
 
 @external
 def execute(_script: Bytes[65536]):
+    """
+    @notice Execute a single script consisting of one or more calls
+    @param _script Script to execute
+    """
     assert self.governors[msg.sender]
 
     i: uint256 = 0
@@ -121,18 +140,36 @@ def execute(_script: Bytes[65536]):
 @external
 @pure
 def script(_to: address, _data: Bytes[2048]) -> Bytes[2080]:
+    """
+    @notice
+        Generate script for a single call.
+        Calls can be chained by concatenating their scripts
+    @param _to The contract to call
+    @param _data Calldata
+    """
     assert len(_data) >= 4
     prefix: uint256 = shift(len(_data), 160) | convert(_to, uint256)
     return concat(convert(convert(prefix, uint224), bytes28), _data)
 
 @external
 def set_governor(_governor: address, _flag: bool):
+    """
+    @notice Set the governor role
+    @param _governor The account to set the role for
+    @param _flag True: set governor, False: unset governor
+    """
     assert msg.sender == self.management
     self.governors[_governor] = _flag
     log SetGovernor(msg.sender, _governor, _flag)
 
 @external
 def set_access(_contract: address, _identifier: bytes4, _access: Access):
+    """
+    @notice Set access control for a contract+identifier combination
+    @param _contract Contract address
+    @param _identifier Function identifier
+    @param _access Whether to enable whitelist or blacklist. Zero to disable access control
+    """
     assert msg.sender == self.management
     target: uint256 = self._pack_target(_contract, _identifier)
     self.access[target] = _access
@@ -140,6 +177,13 @@ def set_access(_contract: address, _identifier: bytes4, _access: Access):
 
 @external
 def whitelist(_contract: address, _identifier: bytes4, _caller: address, _whitelisted: bool):
+    """
+    @notice Whitelist a governor for a contract+identifier combination
+    @param _contract Contract address
+    @param _identifier Function identifier
+    @param _caller Governor to apply the whitelist to
+    @param _whitelisted True: add to whitelist, False: remove from whitelist
+    """
     assert msg.sender == self.management
     target: uint256 = self._pack_target(_contract, _identifier)
     self.whitelisted[target][_caller] = _whitelisted
@@ -148,17 +192,37 @@ def whitelist(_contract: address, _identifier: bytes4, _caller: address, _whitel
 @external
 @view
 def is_whitelisted(_contract: address, _identifier: bytes4, _caller: address) -> bool:
+    """
+    @notice Query if a governor is whitelisted to call a contract+identifier combination
+    @param _contract Contract address
+    @param _identifier Function identifier
+    @param _caller Governor
+    @return True: on whitelist, False: not on whitelist
+    """
     target: uint256 = self._pack_target(_contract, _identifier)
     return self.whitelisted[target][_caller]
 
 @external
 @view
 def has_whitelist(_contract: address, _identifier: bytes4) -> bool:
+    """
+    @notice Query if a contract+identifier combination has whitelist enabled
+    @param _contract Contract address
+    @param _identifier Function identifier
+    @return True: whitelist enabled, False: whitelist disabled
+    """
     target: uint256 = self._pack_target(_contract, _identifier)
     return self.access[target] == Access.WHITELIST
 
 @external
 def blacklist(_contract: address, _identifier: bytes4, _caller: address, _blacklisted: bool):
+    """
+    @notice Blacklist a governor for a contract+identifier combination
+    @param _contract Contract address
+    @param _identifier Function identifier
+    @param _caller Governor to apply the blacklist to
+    @param _blacklisted True: add to blacklist, False: remove from blacklist
+    """
     assert msg.sender == self.management
     target: uint256 = self._pack_target(_contract, _identifier)
     self.blacklisted[target][_caller] = _blacklisted
@@ -167,12 +231,25 @@ def blacklist(_contract: address, _identifier: bytes4, _caller: address, _blackl
 @external
 @view
 def is_blacklisted(_contract: address, _identifier: bytes4, _caller: address) -> bool:
+    """
+    @notice Query if a governor is blacklisted to call a contract+identifier combination
+    @param _contract Contract address
+    @param _identifier Function identifier
+    @param _caller Governor
+    @return True: on blacklist, False: not on blacklist
+    """
     target: uint256 = self._pack_target(_contract, _identifier)
     return self.blacklisted[target][_caller]
 
 @external
 @view
 def has_blacklist(_contract: address, _identifier: bytes4) -> bool:
+    """
+    @notice Query if a contract+identifier combination has blacklist enabled
+    @param _contract Contract address
+    @param _identifier Function identifier
+    @return True: blacklist enabled, False: blacklist disabled
+    """
     target: uint256 = self._pack_target(_contract, _identifier)
     return self.access[target] == Access.BLACKLIST
 
@@ -203,9 +280,15 @@ def accept_management():
 @internal
 @pure
 def _pack_target(_contract: address, _identifier: bytes4) -> uint256:
+    """
+    @notice Pack a contract+identifier into a single word
+    """
     return shift(convert(_contract, uint256), 32) | convert(_identifier, uint256)
 
 @internal
 @pure
 def _unpack_target(_target: uint256) -> (address, bytes4):
+    """
+    @notice Unpack a contract+identifier from a single word
+    """
     return convert(shift(_target, -32), address), convert(convert(_target & IDENTIFIER_MASK, uint32), bytes4)

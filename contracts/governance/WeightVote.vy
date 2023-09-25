@@ -3,6 +3,12 @@
 @title Weight vote
 @author 0xkorin, Yearn Finance
 @license GNU AGPLv3
+@notice
+    Voting contract for weight redistribution.
+    Time is divided in 4 week epochs. In the final week of the epoch, 
+    all users are able to vote on the current pool, as well as a 'blank' option, 
+    indicating their desire to keep the composition unchanged.
+    A part of the weight of the assets in the pool is redistribution according to the vote distribution.
 """
 
 interface Measure:
@@ -48,6 +54,12 @@ VOTE_SCALE: constant(uint256) = 10_000
 
 @external
 def __init__(_genesis: uint256, _pool: address, _measure: address):
+    """
+    @notice Constructor
+    @param _genesis Timestamp of start of epoch 0
+    @param _pool Pool address
+    @param _measure Vote weight measure
+    """
     assert _genesis <= block.timestamp
     assert _pool != empty(address)
     assert _measure != empty(address)
@@ -60,25 +72,46 @@ def __init__(_genesis: uint256, _pool: address, _measure: address):
 @external
 @view
 def epoch() -> uint256:
+    """
+    @notice Get the current epoch
+    @return Current epoch
+    """
     return self._epoch()
 
 @internal
 @view
 def _epoch() -> uint256:
+    """
+    @notice Get the current epoch
+    """
     return (block.timestamp - genesis) / EPOCH_LENGTH
 
 @external
 @view
 def vote_open() -> bool:
+    """
+    @notice Query whether the vote period is currently open
+    @return True: vote period is open, False: vote period is closed
+    """
     return self._vote_open()
 
 @internal
 @view
 def _vote_open() -> bool:
+    """
+    @notice Query whether the vote period is currently open
+    """
     return (block.timestamp - genesis) % EPOCH_LENGTH >= VOTE_START
 
 @external
 def vote(_votes: DynArray[uint256, 33]):
+    """
+    @notice
+        Vote for weight redistribution among the pool assets. The first entry 
+        corresponds to a 'blank' vote, meaning no redistribution will be done.
+        Votes are in basispoints and must add to 100%
+    @param _votes List of votes in bps
+    """
     epoch: uint256 = self._epoch()
     assert self._vote_open()
     assert not self.voted[msg.sender][epoch]
@@ -112,6 +145,10 @@ def vote(_votes: DynArray[uint256, 33]):
 
 @external
 def set_measure(_measure: address):
+    """
+    @notice Set vote weight measure contract
+    @param _measure New vote weight measure
+    """
     assert msg.sender == self.management
     assert _measure != empty(address)
     assert not self._vote_open()

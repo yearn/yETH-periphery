@@ -3,6 +3,16 @@
 @title Generic governor
 @author 0xkorin, Yearn Finance
 @license GNU AGPLv3
+@notice
+    Governor for executing arbitrary calls, after passing through a voting procedure.
+    Time is divided in 4 week epochs. During the first three weeks, accounts with sufficient
+    voting weight are able to submit proposals. In the final week of the epoch all accounts
+    are able to vote on all open proposals. If at the end of the epoch the proposal has reached
+    a sufficiently high fraction of votes, the proposal has passed and can be enacted through
+    the executor.
+
+    Most parameters are configurable by management. The management role is intended to be 
+    transferred to the proxy, making the system self-governing.
 """
 
 interface Measure:
@@ -94,6 +104,12 @@ VOTE_SCALE: constant(uint256) = 10_000
 
 @external
 def __init__(_genesis: uint256, _measure: address, _executor: address):
+    """
+    @notice Constructor
+    @param _genesis Timestamp of start of epoch 0
+    @param _measure Vote weight measure
+    @param _executor Governance executor
+    """
     assert _genesis <= block.timestamp
     assert _measure != empty(address)
     assert _executor != empty(address)
@@ -107,36 +123,62 @@ def __init__(_genesis: uint256, _measure: address, _executor: address):
 @external
 @view
 def epoch() -> uint256:
+    """
+    @notice Get the current epoch
+    @return Current epoch
+    """
     return self._epoch()
 
 @internal
 @view
 def _epoch() -> uint256:
+    """
+    @notice Get the current epoch
+    """
     return (block.timestamp - genesis) / EPOCH_LENGTH
 
 @external
 @view
 def propose_open() -> bool:
+    """
+    @notice Query whether the proposal period is currently open
+    @return True: proposal period is open, False: proposal period is closed
+    """
     return self._propose_open()
 
 @internal
 @view
 def _propose_open() -> bool:
+    """
+    @notice Query whether the proposal period is currently open
+    """
     return (block.timestamp - genesis) % EPOCH_LENGTH < VOTE_START
 
 @external
 @view
 def vote_open() -> bool:
+    """
+    @notice Query whether the vote period is currently open
+    @return True: vote period is open, False: vote period is closed
+    """
     return self._vote_open()
 
 @internal
 @view
 def _vote_open() -> bool:
+    """
+    @notice Query whether the vote period is currently open
+    """
     return (block.timestamp - genesis) % EPOCH_LENGTH >= VOTE_START
 
 @external
 @view
 def proposal(_idx: uint256) -> Proposal:
+    """
+    @notice Get a proposal
+    @param _idx Proposal index
+    @return The proposal
+    """
     proposal: Proposal = self.proposals[_idx]
     proposal.state = self._proposal_state(_idx)
     return proposal
@@ -144,10 +186,20 @@ def proposal(_idx: uint256) -> Proposal:
 @external
 @view
 def proposal_state(_idx: uint256) -> uint256:
+    """
+    @notice Get the state of a proposal
+    @param _idx Proposal index
+    @return The proposal state
+    """
     return self._proposal_state(_idx)
 
 @external
 def update_proposal_state(_idx: uint256) -> uint256:
+    """
+    @notice Update the state of a proposal
+    @param _idx Proposal index
+    @return The proposal state
+    """
     state: uint256 = self._proposal_state(_idx)
     if state != STATE_ABSENT:
         self.proposals[_idx].state = state
@@ -156,6 +208,12 @@ def update_proposal_state(_idx: uint256) -> uint256:
 @internal
 @view
 def _proposal_state(_idx: uint256) -> uint256:
+    """
+    @notice Get the state of a proposal
+    @dev 
+        Deterimines the pass/reject state based on the relative
+        number of votes in favor
+    """
     state: uint256 = self.proposals[_idx].state
     if state != STATE_PROPOSED:
         return state
@@ -176,6 +234,11 @@ def _proposal_state(_idx: uint256) -> uint256:
 
 @external
 def propose(_script: Bytes[65536]) -> uint256:
+    """
+    @notice Create a proposal
+    @param _script Script to be executed if the proposal passes
+    @return The proposal index
+    """
     assert self._propose_open()
     assert Measure(self.measure).vote_weight(msg.sender) >= self.propose_min_weight
 
@@ -191,6 +254,10 @@ def propose(_script: Bytes[65536]) -> uint256:
 
 @external
 def retract(_idx: uint256):
+    """
+    @notice Retract a proposal. Only callable by proposal author
+    @param _idx Proposal index
+    """
     assert msg.sender == self.proposals[_idx].author
     state: uint256 = self._proposal_state(_idx)
     assert state == STATE_PROPOSED
@@ -199,6 +266,10 @@ def retract(_idx: uint256):
 
 @external
 def cancel(_idx: uint256):
+    """
+    @notice Cancel a proposal. Only callable by management
+    @param _idx Proposal index
+    """
     assert msg.sender == self.management
     state: uint256 = self._proposal_state(_idx)
     assert state == STATE_PROPOSED or state == STATE_PASSED
@@ -207,18 +278,35 @@ def cancel(_idx: uint256):
 
 @external
 def vote_yea(_idx: uint256):
+    """
+    @notice Vote in favor of a proposal
+    @param _idx Proposal index
+    """
     self._vote(_idx, VOTE_SCALE, 0)
 
 @external
 def vote_nay(_idx: uint256):
+    """
+    @notice Vote in opposition of a proposal
+    @param _idx Proposal index
+    """
     self._vote(_idx, 0, VOTE_SCALE)
 
 @external
 def vote(_idx: uint256, _yea: uint256, _nay: uint256):
+    """
+    @notice Weighted vote on a proposal
+    @param _idx Proposal index
+    @param _yea Fraction of votes in favor
+    @param _nay Fraction of votes in opposition
+    """
     self._vote(_idx, _yea, _nay)
 
 @internal
 def _vote(_idx: uint256, _yea: uint256, _nay: uint256):
+    """
+    @notice Weighted vote on a proposal
+    """
     assert self._vote_open()
     assert self.proposals[_idx].epoch == self._epoch()
     assert self.proposals[_idx].state == STATE_PROPOSED
@@ -240,6 +328,11 @@ def _vote(_idx: uint256, _yea: uint256, _nay: uint256):
 
 @external
 def enact(_idx: uint256, _script: Bytes[65536]):
+    """
+    @notice Enact a proposal after its vote has passed
+    @param _idx Proposal index
+    @param _script The script to execute
+    """
     assert self._proposal_state(_idx) == STATE_PASSED
     assert keccak256(_script) == self.proposals[_idx].hash
     assert (block.timestamp - genesis) % EPOCH_LENGTH >= self.delay
@@ -250,6 +343,10 @@ def enact(_idx: uint256, _script: Bytes[65536]):
 
 @external
 def set_measure(_measure: address):
+    """
+    @notice Set vote weight measure contract
+    @param _measure New vote weight measure
+    """
     assert msg.sender == self.management
     assert _measure != empty(address)
     self.measure = _measure
@@ -257,6 +354,10 @@ def set_measure(_measure: address):
 
 @external
 def set_executor(_executor: address):
+    """
+    @notice Set executor contract
+    @param _executor New executor
+    """
     assert msg.sender == self.management
     assert _executor != empty(address)
     self.executor = _executor
@@ -264,6 +365,12 @@ def set_executor(_executor: address):
 
 @external
 def set_delay(_delay: uint256):
+    """
+    @notice
+        Set proposal time delay in seconds. Proposals that passed need to wait 
+        at least this time before they can be executed.
+    @param _delay New delay
+    """
     assert msg.sender == self.management
     assert _delay <= VOTE_START
     self.delay = _delay
@@ -271,6 +378,10 @@ def set_delay(_delay: uint256):
 
 @external
 def set_majority(_majority: uint256):
+    """
+    @notice Set majority threshold. Proposals need at least this fraction of votes in favor to pass
+    @param _majority New majority threshold
+    """
     assert msg.sender == self.management
     assert _majority <= VOTE_SCALE
     self.majority = _majority
@@ -278,6 +389,10 @@ def set_majority(_majority: uint256):
 
 @external
 def set_propose_min_weight(_propose_min_weight: uint256):
+    """
+    @notice Set minimum vote weight required to submit new proposals
+    @param _propose_min_weight New minimum weight
+    """
     assert msg.sender == self.management
     self.propose_min_weight = _propose_min_weight
     log SetProposeMinWeight(_propose_min_weight)

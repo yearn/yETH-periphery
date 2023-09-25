@@ -1,8 +1,19 @@
 # @version 0.3.7
 """
-@title Pool executor
+@title Pool governor
 @author 0xkorin, Yearn Finance
 @license GNU AGPLv3
+@notice
+    Governs the addition of new assets and ramping of weights throught the governance executor.
+    Relies on results from the inclusion and weight voting contracts.
+    If the inclusion vote resulted in a winner, this contract will add it to the pool
+    with a small weight. Next, it will schedule a ramp based on the results from the weight voting
+    contracts. A percentage of each assets weight is subtracted and redistributed according to
+    amount of votes for each asset. Simultaneously the weight of the newly added asset is ramped up.
+
+    The operator is a trusted role with very limited powers. They are tasked with setting parameters
+    such that the new asset is added with minimal arb opportunities. Outside of these safety conditions 
+    it has no power to change the new to be added asset or any of the weights.
 """
 
 from vyper.interfaces import ERC20
@@ -72,6 +83,12 @@ PRECISION: constant(uint256) = 10**18
 
 @external
 def __init__(_genesis: uint256, _pool: address, _executor: address):
+    """
+    @notice Constructor
+    @param _genesis Timestamp of start of epoch 0
+    @param _pool Pool address
+    @param _executor Governance executor address
+    """
     genesis = _genesis
     pool = _pool
     self.management = msg.sender
@@ -88,15 +105,33 @@ def __init__(_genesis: uint256, _pool: address, _executor: address):
 @external
 @view
 def epoch() -> uint256:
+    """
+    @notice Get the current epoch
+    @return Current epoch
+    """
     return self._epoch()
 
 @internal
 @view
 def _epoch() -> uint256:
+    """
+    @notice Get the current epoch
+    """
     return (block.timestamp - genesis) / EPOCH_LENGTH
 
 @external
 def execute(_lower: uint256, _upper: uint256, _amount: uint256, _amplification: uint256, _min_lp_amount: uint256):
+    """
+    @notice 
+        Add new asset and ramp weights through the governance executor.
+        Operator should pick values in such a way to minimize arb opportunities 
+        introduced by adding a new asset to the pool.
+    @param _lower Lower weight band (18 decimals)
+    @param _upper Upper weight band (18 decimals)
+    @param _amount Amount of token to transfer to the pool, in exchange for LP token
+    @param _amplification The amplification to set simultaneously with adding the new asset
+    @param _min_lp_amount Minimum amount of LP tokens to receive
+    """
     epoch: uint256 = self._epoch() - 1
     iv: InclusionVote = InclusionVote(self.inclusion_vote)
     assert msg.sender == self.operator
@@ -175,12 +210,20 @@ def execute(_lower: uint256, _upper: uint256, _amount: uint256, _amplification: 
 
 @external
 def set_target_amplification(_target: uint256):
+    """
+    @notice Set the target amplification factor for the next ramp
+    @param _target Target amplification factor
+    """
     assert msg.sender == self.management
     self.target_amplification = _target
     log SetValue(0, _target)
 
 @external
 def set_executor(_executor: address):
+    """
+    @notice Set the governance executor
+    @param _executor Governance executor
+    """
     assert msg.sender == self.management
     assert _executor != empty(address)
     self.executor = _executor
@@ -188,6 +231,10 @@ def set_executor(_executor: address):
 
 @external
 def set_operator(_operator: address):
+    """
+    @notice Set the operator
+    @param _operator Operator
+    """
     assert msg.sender == self.management or msg.sender == self.operator
     assert _operator != empty(address)
     self.operator = _operator
@@ -195,30 +242,52 @@ def set_operator(_operator: address):
 
 @external
 def set_initial_weight(_weight: uint256):
+    """
+    @notice Set the initial weight during addition of new asset to the pool
+    @param _weight Initial weight (18 decimals)
+    """
     assert msg.sender == self.management
     self.initial_weight = _weight
     log SetValue(1, _weight)
 
 @external
 def set_ramp_weight(_weight: uint256):
+    """
+    @notice Set the ramp target weight of the newly added asset
+    @param _weight Ramp target weight (18 decimals)
+    """
     assert msg.sender == self.management
     self.ramp_weight = _weight
     log SetValue(2, _weight)
 
 @external
 def set_redistribute_weight(_weight: uint256):
+    """
+    @notice Set the weight that is redistributed according to the votes
+    @param _weight Redistribute weight (18 decimals)
+    """
     assert msg.sender == self.management
     self.redistribute_weight = _weight
     log SetValue(3, _weight)
 
 @external
 def set_ramp_duration(_duration: uint256):
+    """
+    @notice Set the ramp duration
+    @param _duration Ramp duration (seconds)
+    """
     assert msg.sender == self.management
     self.ramp_duration = _duration
     log SetValue(4, _duration)
 
 @external
 def set_inclusion_vote(_inclusion: address):
+    """
+    @notice 
+        Set the inclusion vote contract that determines which asset should be 
+        newly included in the pool.
+    @param _inclusion New inclusion vote contract
+    """
     assert msg.sender == self.management
     assert _inclusion != empty(address)
     self.inclusion_vote = _inclusion
@@ -226,6 +295,12 @@ def set_inclusion_vote(_inclusion: address):
 
 @external
 def set_weight_vote(_weight: address):
+    """
+    @notice 
+        Set the weight vote contract that determines the redistribution of
+        weights over the assets.
+    @param _weight New weight vote contract
+    """
     assert msg.sender == self.management
     assert _weight != empty(address)
     self.weight_vote = _weight

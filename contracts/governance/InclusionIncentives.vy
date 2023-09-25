@@ -3,6 +3,14 @@
 @title Incentives for inclusion vote
 @author 0xkorin, Yearn Finance
 @license GNU AGPLv3
+@notice
+    Permissionlessly submit incentives for assets inclusion in the pool.
+    Incentives are only paid out for the winning asset each epoch,
+    all other incentives are refunded.
+    Winner's incentives are paid out to all voters, regardless of whether they voted
+    on the winner or on another candidate.
+    Incentives that remain unclaimed for a preconfigured number of epochs
+    are considered expired and can be swept away.
 """
 
 from vyper.interfaces import ERC20
@@ -75,6 +83,10 @@ VOTE_START: constant(uint256) = EPOCH_LENGTH - VOTE_LENGTH
 
 @external
 def __init__(_voting: address):
+    """
+    @notice Constructor
+    @param _voting The inclusion voting contract
+    """
     voting = Voting(_voting)
     genesis = voting.genesis()
     self.management = msg.sender
@@ -85,15 +97,33 @@ def __init__(_voting: address):
 @external
 @view
 def epoch() -> uint256:
+    """
+    @notice Get the current epoch
+    @return Current epoch
+    """
     return self._epoch()
 
 @internal
 @view
 def _epoch() -> uint256:
+    """
+    @notice Get the current epoch
+    """
     return (block.timestamp - genesis) / EPOCH_LENGTH
 
 @external
 def deposit(_candidate: address, _token: address, _amount: uint256):
+    """
+    @notice 
+        Deposit an incentive. Only allowed in the beginning of an epoch.
+        Management can set a deadline after which no new incentives can be deposited.
+    @param _candidate
+        The candidate token address to place the incentive on.
+        The zero address represents the 'blank' option, meaning no new
+        asset is to be added to the pool.
+    @param _token The incentive token to deposit
+    @param _amount The amount of incentive token to deposit
+    """
     assert (block.timestamp - genesis) % EPOCH_LENGTH <= self.deposit_deadline
     epoch: uint256 = self._epoch()
     self.incentives[epoch][_candidate][_token] += _amount
@@ -106,6 +136,12 @@ def deposit(_candidate: address, _token: address, _amount: uint256):
 @external
 @view
 def claimable(_epoch: uint256, _token: address, _account: address) -> uint256:
+    """
+    @notice Query the amount of incentive that can be claimed by a specific account
+    @param _epoch Epoch to query for
+    @param _token Incentive token to query for
+    @param _account Claimer to query for
+    """
     winner: address = voting.winners(_epoch)
     if voting.latest_finalized_epoch() < _epoch or self.user_claimed[_account][_epoch][_token]:
         return 0
@@ -118,6 +154,12 @@ def claimable(_epoch: uint256, _token: address, _account: address) -> uint256:
 
 @external
 def claim_many(_epochs: DynArray[uint256, 16], _tokens: DynArray[address, 16], _account: address = msg.sender):
+    """
+    @notice Claim one or multiple incentives at once
+    @param _epochs List of epochs to claim for
+    @param _tokens List of tokens to claim for, corresponding to the list of epochs
+    @param _account Account to claim for
+    """
     assert len(_epochs) == len(_tokens)
     for i in range(16):
         if i == len(_epochs):
@@ -126,10 +168,22 @@ def claim_many(_epochs: DynArray[uint256, 16], _tokens: DynArray[address, 16], _
 
 @external
 def claim(_epoch: uint256, _token: address, _account: address = msg.sender):
+    """
+    @notice
+        Claim an incentive. Incentives are claimable if the candidate received 
+        the most amount of votes in the epoch in question, and are split amongst
+        all voters, regardless whether they voted for the winner or not.
+    @param _epoch Epoch to claim for
+    @param _token Tokens to claim for
+    @param _account Account to claim for
+    """
     self._claim(_epoch, _token, _account)
 
 @internal
 def _claim(_epoch: uint256, _token: address, _account: address):
+    """
+    @notice Claim an incentive
+    """
     assert voting.latest_finalized_epoch() >= _epoch
     winner: address = voting.winners(_epoch)
     total_votes: uint256 = voting.total_votes(_epoch)
@@ -148,6 +202,13 @@ def _claim(_epoch: uint256, _token: address, _account: address):
 @external
 @view
 def refundable(_epoch: uint256, _candidate: address, _token: address, _depositor: address = msg.sender) -> uint256:
+    """
+    @notice Query whether an incentive can be refunded
+    @param _epoch Epoch to query for
+    @param _candidate Candidate token to query for
+    @param _token Incentive token to query for
+    @param _depositor Incentive depositor to query for
+    """
     winner: address = voting.winners(_epoch)
     if voting.latest_finalized_epoch() < _epoch or (winner == _candidate and voting.total_votes(_epoch) > 0):
         return 0
@@ -155,6 +216,15 @@ def refundable(_epoch: uint256, _candidate: address, _token: address, _depositor
 
 @external
 def refund(_epoch: uint256, _candidate: address, _token: address, _depositor: address = msg.sender):
+    """
+    @notice
+        Refund an incentive. Incentives can be refunded if the candidate token has not
+        received the most amount of votes and therefore has lost.
+    @param _epoch Epoch to refund for
+    @param _candidate Candidate token to refund for
+    @param _token Incentive token to refund
+    @param _depositor Incentive depositor to refund for
+    """
     assert voting.latest_finalized_epoch() >= _epoch
     assert voting.winners(_epoch) != _candidate or voting.total_votes(_epoch) == 0
 
@@ -169,12 +239,25 @@ def refund(_epoch: uint256, _candidate: address, _token: address, _depositor: ad
 @external
 @view
 def sweepable(_epoch: uint256, _token: address) -> uint256:
+    """
+    @notice Query whether an incentive can be swept
+    @param _epoch Epoch to query for
+    @param _token Incentive token to query for
+    """
     if self._epoch() <= _epoch + self.claim_deadline:
         return 0
     return self.unclaimed[_epoch][_token]
 
 @external
 def sweep(_epoch: uint256, _token: address, _recipient: address = msg.sender):
+    """
+    @notice
+        Sweep unclaimed incentives. Incenties that remain unclaimed for a set
+        number of epochs expire and can be swept by treasury.
+    @param _epoch Epoch to sweep for
+    @param _token Incentive token to sweep
+    @param _recipient Recipient of the swept incentives
+    """
     assert msg.sender == self.treasury
     assert self._epoch() > _epoch + self.claim_deadline
 
@@ -187,6 +270,10 @@ def sweep(_epoch: uint256, _token: address, _recipient: address = msg.sender):
 
 @external
 def set_treasury(_treasury: address):
+    """
+    @notice Set the new treasury address. Treasury can sweep expired unclaimed incentives
+    @param _treasury New treasury address
+    """
     assert msg.sender == self.management or msg.sender == self.treasury
     assert _treasury != empty(address)
     self.treasury = _treasury
@@ -194,6 +281,12 @@ def set_treasury(_treasury: address):
 
 @external
 def set_deposit_deadline(_deadline: uint256):
+    """
+    @notice 
+        Set the deposit deadline in seconds, after which in every epoch
+        incentives are no longer allowed to be posted.
+    @param _deadline New deposit deadline in seconds from the start of the epoch
+    """
     assert msg.sender == self.management
     assert _deadline <= EPOCH_LENGTH
     self.deposit_deadline = _deadline
@@ -201,6 +294,12 @@ def set_deposit_deadline(_deadline: uint256):
 
 @external
 def set_claim_deadline(_deadline: uint256):
+    """
+    @notice 
+        Set the claim deadline in epochs, after which unclaimed incentives 
+        are considered expired and can be swept by treasury.
+    @param _deadline New claim deadline in epochs
+    """
     assert msg.sender == self.management
     assert _deadline >= 1
     self.claim_deadline = _deadline
