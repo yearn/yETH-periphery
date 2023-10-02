@@ -386,3 +386,31 @@ def test_management_proxy(chain, deployer, alice, bob, measure, proxy, executor,
     assert governor.delay() == 0
     governor.enact(idx_delay, delay, sender=bob)
     assert governor.delay() == 3600
+
+def test_ordering(chain, deployer, alice, measure, token, proxy, executor, governor, script):
+    # setting parameters on governor should not affect this epoch, currently fails
+    executor.set_governor(deployer, True, sender=deployer)
+    governor.set_management(proxy, sender=deployer)
+    data = governor.accept_management.encode_input()
+    executor.execute_single(governor, data, sender=deployer)
+
+    idx1 = governor.propose(script, sender=alice).return_value
+    script2 = executor.script(governor, governor.set_majority.encode_input(8000))
+    idx2 = governor.propose(script2, sender=alice).return_value
+
+    chain.pending_timestamp += VOTE_START
+    measure.set_vote_weight(alice, UNIT, sender=alice)
+    governor.vote(idx1, 5000, 5000, sender=alice)
+    governor.vote_yea(idx2, sender=alice)
+    chain.pending_timestamp += WEEK
+
+    # transfer tokens first, set majority after
+    with chain.isolate():
+        governor.enact(idx1, script, sender=alice)
+        governor.enact(idx2, script2, sender=alice)
+        assert token.balanceOf(alice) == UNIT
+
+    # set majority first, transfer tokens after
+    governor.enact(idx2, script2, sender=alice)
+    governor.enact(idx1, script, sender=alice)
+    assert token.balanceOf(alice) == UNIT

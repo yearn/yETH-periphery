@@ -70,3 +70,22 @@ def test_remove_delegate(deployer, alice, measure):
     measure.delegate(alice, ZERO_ADDRESS, sender=deployer)
     assert measure.delegator(alice) == ZERO_ADDRESS
     assert measure.delegated(deployer) == ZERO_ADDRESS
+
+def test_delegate_previous(chain, accounts, deployer, alice, token, staking, measure):
+    # delegated voting weight should not be manipulatable, currently fails
+    management = accounts[token.management()]
+    token.set_minter(deployer, sender=management)
+    token.mint(deployer, 2 * UNIT, sender=deployer)
+    token.approve(staking, 2 * UNIT, sender=deployer)
+    staking.deposit(UNIT, sender=deployer)
+    chain.pending_timestamp += 7 * 86400
+    chain.mine()
+
+    measure.set_delegate_multiplier(5000, sender=deployer)
+    measure.delegate(deployer, alice, sender=deployer)
+    weight = measure.vote_weight(alice)
+    assert weight > 0
+
+    # depositing in same week should not increase weight
+    staking.deposit(UNIT, sender=deployer)
+    assert measure.vote_weight(alice) == weight
