@@ -24,8 +24,9 @@ interface Bootstrap:
     def deposited() -> uint256: view
     def deposits(_account: address) -> uint256: view
 
-staking: public(immutable(address))
+staking: public(immutable(Staking))
 bootstrap: public(immutable(address))
+delegated_staking: public(immutable(Measure))
 management: public(address)
 pending_management: public(address)
 
@@ -49,13 +50,15 @@ event SetManagement:
 DELEGATE_SCALE: constant(uint256) = 10_000
 
 @external
-def __init__(_staking: address, _bootstrap: address):
+def __init__(_staking: address, _bootstrap: address, _delegated_staking: address):
     """
     @notice Constructor
     @param _staking Staking contract
     @param _bootstrap Bootstrap contract
+    @param _delegated_staking Delegated staking contract
     """
-    staking = _staking
+    staking = Staking(_staking)
+    delegated_staking = Measure(_delegated_staking)
     bootstrap = _bootstrap
     self.management = msg.sender
 
@@ -69,7 +72,7 @@ def total_vote_weight() -> uint256:
         Care should be taken to use for quorum purposes, as the sum of actual available 
         vote weights will be lower than this due to asymptotical vote weight increase.
     """
-    return Staking(staking).totalSupply()
+    return staking.totalSupply()
 
 @external
 @view
@@ -79,21 +82,18 @@ def vote_weight(_account: address) -> uint256:
     @param _account Account to get vote weight for
     @return Account vote weight
     """
-    if self.delegator[_account] != empty(address) and self.delegate_multiplier > 0:
-        return 0
-
     weight: uint256 = Bootstrap(bootstrap).deposits(_account)
     if weight > 0:
         deposited: uint256 = Bootstrap(bootstrap).deposited()
         if deposited > 0:
-            weight = weight * Staking(staking).vote_weight(bootstrap) / deposited
+            weight = weight * staking.vote_weight(bootstrap) / deposited
         else:
             weight = 0
-    weight += Staking(staking).vote_weight(_account)
+    weight += staking.vote_weight(_account)
 
     delegated: address = self.delegated[_account]
     if delegated != empty(address):
-        weight += Staking(staking).balanceOf(delegated) * self.delegate_multiplier / DELEGATE_SCALE
+        weight += delegated_staking.vote_weight(delegated) * self.delegate_multiplier / DELEGATE_SCALE
 
     return weight
     
