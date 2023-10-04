@@ -37,8 +37,8 @@ pending_management: public(address)
 
 measure: public(address)
 executor: public(address)
-delay: public(uint256)
-majority: public(uint256)
+packed_majority: uint256 # current (120) | previous (120) | epoch (16)
+packed_delay: uint256 # current (120) | previous (120) | epoch (16)
 propose_min_weight: public(uint256)
 
 num_proposals: public(uint256)
@@ -102,23 +102,34 @@ VOTE_LENGTH: constant(uint256) = WEEK
 VOTE_START: constant(uint256) = EPOCH_LENGTH - VOTE_LENGTH
 VOTE_SCALE: constant(uint256) = 10_000
 
+VALUE_MASK: constant(uint256) = 2**120 - 1
+PREVIOUS_SHIFT: constant(int128) = -120
+EPOCH_MASK: constant(uint256) = 2**16 - 1
+EPOCH_SHIFT: constant(int128) = -240
+
 @external
-def __init__(_genesis: uint256, _measure: address, _executor: address):
+def __init__(_genesis: uint256, _measure: address, _executor: address, _majority: uint256, _delay: uint256):
     """
     @notice Constructor
     @param _genesis Timestamp of start of epoch 0
     @param _measure Vote weight measure
     @param _executor Governance executor
+    @param _majority Majority threshold (bps)
+    @param _delay Vote enactment delay (seconds)
     """
     assert _genesis <= block.timestamp
     assert _measure != empty(address)
     assert _executor != empty(address)
+    assert _majority < VOTE_SCALE
+    assert _delay <= VOTE_START
 
     genesis = _genesis
     self.management = msg.sender
     self.measure = _measure
     self.executor = _executor
-    self.majority = VOTE_SCALE / 2
+    self.packed_majority = _majority
+    self.packed_delay = _delay
+    assert self._epoch() > 0
 
 @external
 @view
@@ -173,6 +184,70 @@ def _vote_open() -> bool:
 
 @external
 @view
+def majority() -> uint256:
+    """
+    @notice Get majority threshold required to pass a proposal
+    @return Majority threshold (bps)
+    """
+    return self.packed_majority & VALUE_MASK
+
+@external
+@view
+def previous_majority() -> uint256:
+    """
+    @notice Get majority threshold required to pass a proposal of previous epoch
+    @return Majority threshold (bps)
+    """
+    return self._majority(self._epoch() - 1)
+
+@internal
+@view
+def _majority(_epoch: uint256) -> uint256:
+    """
+    @notice Get majority threshold of an epoch
+    @param _epoch Epoch to query majority threshold for
+    @return Majority threshold (bps)
+    @dev Should only be used to query this or last epoch's value
+    """
+    packed: uint256 = self.packed_majority
+    if _epoch < shift(packed, EPOCH_SHIFT):
+        return shift(packed, PREVIOUS_SHIFT) & VALUE_MASK
+    return packed & VALUE_MASK
+
+@external
+@view
+def delay() -> uint256:
+    """
+    @notice Get minimum delay between passing a proposal and its enactment
+    @return Enactment delay (seconds)
+    """
+    return self.packed_delay & VALUE_MASK
+
+@external
+@view
+def previous_delay() -> uint256:
+    """
+    @notice Get minimum delay between passing a proposal and its enactment of previous epoch
+    @return Enactment delay (seconds)
+    """
+    return self._delay(self._epoch() - 1)
+
+@internal
+@view
+def _delay(_epoch: uint256) -> uint256:
+    """
+    @notice Get minimum delay between passing a proposal and its enactment
+    @param _epoch Epoch to query delay for
+    @return Enactment delay (seconds)
+    @dev Should only be used to query this or last epoch's value
+    """
+    packed: uint256 = self.packed_delay
+    if _epoch < shift(packed, EPOCH_SHIFT):
+        return shift(packed, PREVIOUS_SHIFT) & VALUE_MASK
+    return packed & VALUE_MASK
+
+@external
+@view
 def proposal(_idx: uint256) -> Proposal:
     """
     @notice Get a proposal
@@ -210,9 +285,7 @@ def update_proposal_state(_idx: uint256) -> uint256:
 def _proposal_state(_idx: uint256) -> uint256:
     """
     @notice Get the state of a proposal
-    @dev 
-        Deterimines the pass/reject state based on the relative
-        number of votes in favor
+    @dev Determines the pass/reject state based on the relative number of votes in favor
     """
     state: uint256 = self.proposals[_idx].state
     if state != STATE_PROPOSED:
@@ -227,7 +300,7 @@ def _proposal_state(_idx: uint256) -> uint256:
         yea: uint256 = self.proposals[_idx].yea
         nay: uint256 = self.proposals[_idx].nay
         votes: uint256 = yea + nay
-        if votes > 0 and yea * VOTE_SCALE >= votes * self.majority:
+        if votes > 0 and yea * VOTE_SCALE >= votes * self._majority(vote_epoch):
             return STATE_PASSED
 
     return STATE_REJECTED
@@ -335,7 +408,8 @@ def enact(_idx: uint256, _script: Bytes[65536]):
     """
     assert self._proposal_state(_idx) == STATE_PASSED
     assert keccak256(_script) == self.proposals[_idx].hash
-    assert (block.timestamp - genesis) % EPOCH_LENGTH >= self.delay
+    delay: uint256 = self._delay(self._epoch() - 1)
+    assert (block.timestamp - genesis) % EPOCH_LENGTH >= delay
 
     self.proposals[_idx].state = STATE_ENACTED
     log Enact(_idx, msg.sender)
@@ -364,28 +438,34 @@ def set_executor(_executor: address):
     log SetExecutor(_executor)
 
 @external
-def set_delay(_delay: uint256):
-    """
-    @notice
-        Set proposal time delay in seconds. Proposals that passed need to wait 
-        at least this time before they can be executed.
-    @param _delay New delay
-    """
-    assert msg.sender == self.management
-    assert _delay <= VOTE_START
-    self.delay = _delay
-    log SetDelay(_delay)
-
-@external
 def set_majority(_majority: uint256):
     """
-    @notice Set majority threshold. Proposals need at least this fraction of votes in favor to pass
-    @param _majority New majority threshold
+    @notice 
+        Set majority threshold in basispoints. 
+        Proposals need at least this fraction of votes in favor to pass
+    @param _majority New majority threshold (bps)
     """
     assert msg.sender == self.management
     assert _majority <= VOTE_SCALE
-    self.majority = _majority
+    epoch: uint256 = self._epoch()
+    previous: uint256 = self._majority(epoch - 1)
+    self.packed_majority = _majority | shift(previous, -PREVIOUS_SHIFT) | shift(epoch, -EPOCH_SHIFT)
     log SetMajority(_majority)
+
+@external
+def set_delay(_delay: uint256):
+    """
+    @notice
+        Set enactment time delay in seconds. Proposals that passed need to wait 
+        at least this time before they can be enacted.
+    @param _delay New delay (seconds)
+    """
+    assert msg.sender == self.management
+    assert _delay <= VOTE_START
+    epoch: uint256 = self._epoch()
+    previous: uint256 = self._delay(epoch - 1)
+    self.packed_delay = _delay | shift(previous, -PREVIOUS_SHIFT) | shift(epoch, -EPOCH_SHIFT)
+    log SetDelay(_delay)
 
 @external
 def set_propose_min_weight(_propose_min_weight: uint256):

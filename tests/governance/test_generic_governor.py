@@ -3,6 +3,7 @@ import pytest
 
 WEEK = 7 * 24 * 60 * 60
 VOTE_START = 3 * WEEK
+EPOCH_LENGTH = 4 * WEEK
 UNIT = 1_000_000_000_000_000_000
 
 STATE_ABSENT    = 0
@@ -35,7 +36,7 @@ def token(project, deployer):
 
 @pytest.fixture
 def governor(chain, project, deployer, measure, executor):
-    governor = project.GenericGovernor.deploy(chain.pending_timestamp, measure, executor, sender=deployer)
+    governor = project.GenericGovernor.deploy(chain.pending_timestamp - EPOCH_LENGTH, measure, executor, 5000, 0, sender=deployer)
     executor.set_governor(governor, True, sender=deployer)
     return governor
 
@@ -234,7 +235,11 @@ def test_vote_closed_nay(chain, alice, bob, measure, governor, script):
     assert governor.proposal_state(idx) == STATE_REJECTED
 
 def test_vote_closed_supermajority_yea(chain, deployer, alice, measure, governor, script):
+    governor.set_majority(6000, sender=deployer)
+    assert governor.previous_majority() == 5000
     governor.set_majority(6666, sender=deployer)
+    assert governor.previous_majority() == 5000
+
     idx = governor.propose(script, sender=alice).return_value
     chain.pending_timestamp += VOTE_START
     chain.mine()
@@ -294,7 +299,11 @@ def test_execute_different(chain, alice, bob, measure, proxy, executor, token, g
     governor.enact(idx, script, sender=bob)
 
 def test_execute_delay(chain, deployer, alice, bob, measure, token, governor, script):
+    governor.set_delay(100, sender=deployer)
+    assert governor.previous_delay() == 0
     governor.set_delay(3600, sender=deployer)
+    assert governor.previous_delay() == 0
+
     idx = governor.propose(script, sender=alice).return_value
     chain.pending_timestamp += VOTE_START
     chain.mine()
@@ -388,7 +397,7 @@ def test_management_proxy(chain, deployer, alice, bob, measure, proxy, executor,
     assert governor.delay() == 3600
 
 def test_ordering(chain, deployer, alice, measure, token, proxy, executor, governor, script):
-    # setting parameters on governor should not affect this epoch, currently fails
+    # setting parameters on governor should not affect this epoch
     executor.set_governor(deployer, True, sender=deployer)
     governor.set_management(proxy, sender=deployer)
     data = governor.accept_management.encode_input()
