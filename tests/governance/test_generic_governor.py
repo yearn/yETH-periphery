@@ -79,6 +79,13 @@ def test_retract_proposal(alice, bob, governor, script):
     governor.retract(idx, sender=alice)
     assert governor.proposal_state(idx) == STATE_RETRACTED
 
+def test_retract_proposal_too_late(chain, alice, governor, script):
+    idx = governor.propose(script, sender=alice).return_value
+    chain.pending_timestamp += VOTE_START
+    with ape.reverts():
+        governor.retract(idx, sender=alice)
+    assert governor.proposal_state(idx) == STATE_PROPOSED
+
 def test_cancel_proposal(deployer, alice, governor, script):
     idx = governor.propose(script, sender=alice).return_value
     with ape.reverts():

@@ -333,7 +333,7 @@ def retract(_idx: uint256):
     """
     assert msg.sender == self.proposals[_idx].author
     state: uint256 = self._proposal_state(_idx)
-    assert state == STATE_PROPOSED
+    assert state == STATE_PROPOSED and not self._vote_open()
     self.proposals[_idx].state = STATE_RETRACTED
     log Retract(_idx)
 
