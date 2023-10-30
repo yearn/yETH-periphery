@@ -288,7 +288,7 @@ def _proposal_state(_idx: uint256) -> uint256:
     @dev Determines the pass/reject state based on the relative number of votes in favor
     """
     state: uint256 = self.proposals[_idx].state
-    if state != STATE_PROPOSED:
+    if state not in [STATE_PROPOSED, STATE_PASSED]:
         return state
 
     current_epoch: uint256 = self._epoch()

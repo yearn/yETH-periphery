@@ -346,6 +346,19 @@ def test_execute_cancelled(chain, deployer, alice, bob, measure, governor, scrip
     with ape.reverts():
         governor.enact(idx, script, sender=bob)
 
+def test_execute_too_late(chain, alice, bob, measure, governor, script):
+    idx = governor.propose(script, sender=alice).return_value
+    chain.pending_timestamp += VOTE_START
+    measure.set_vote_weight(alice, UNIT, sender=alice)
+    governor.vote_yea(idx, sender=alice)
+
+    chain.pending_timestamp += WEEK
+    assert governor.update_proposal_state(idx, sender=alice).return_value == STATE_PASSED
+
+    chain.pending_timestamp += EPOCH_LENGTH
+    with ape.reverts():
+        governor.enact(idx, script, sender=bob)
+
 def test_management_proxy(chain, deployer, alice, bob, measure, proxy, executor, governor):
     # transfer executor+governor management to proxy
     executor.set_management(proxy, sender=deployer)
