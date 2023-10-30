@@ -38,34 +38,27 @@ def ivoting(chain, project, deployer, measure, fee_token):
     return project.InclusionVote.deploy(chain.pending_timestamp - EPOCH_LENGTH, measure, fee_token, sender=deployer)
 
 @pytest.fixture
-def tokens(project, deployer):
-    return [project.MockToken.deploy(sender=deployer) for _ in range(2)]
+def provider(project, deployer):
+    return project.MockProvider.deploy(sender=deployer)
 
 @pytest.fixture
-def lp_token(chain, deployer):
-    deployed = ape.Contract(YETH)
-    return chain.contracts.get_container(deployed.contract_type).deploy(sender=deployer)
+def pool(networks, accounts, deployer, proxy, executor):
+    # modify deployed pool slots to 2 assets with 50% weight
+    pool = ape.Contract(POOL)
+    networks.provider.set_storage(pool.address, 1, int(10**18).to_bytes(32))
+    networks.provider.set_storage(pool.address, 4, int(2).to_bytes(32))
 
-@pytest.fixture
-def provider(project, deployer, tokens):
-    provider = project.MockProvider.deploy(sender=deployer)
-    for token in tokens:
-        provider.set_rate(token, UNIT, sender=deployer)
-    return provider
+    mask = ((1 << 256) - 1) ^ (((1 << 40) - 1) << 176)
+    weights = (500000 << 176) + (500000 << 196)
 
-@pytest.fixture
-def pool(chain, deployer, alice, proxy, executor, tokens, lp_token, provider):
-    deployed = ape.Contract(POOL)
-    pool = chain.contracts.get_container(deployed.contract_type).deploy(
-        lp_token, 450 * UNIT, tokens, [provider for _ in tokens], [UNIT//len(tokens) for _ in tokens], sender=deployer
-    )
-    pool.set_staking(alice, sender=deployer)
-    lp_token.set_minter(pool, sender=deployer)
-    for token in tokens:
-        token.mint(alice, UNIT, sender=alice)
-        token.approve(pool, UNIT, sender=alice)
-    pool.add_liquidity([UNIT for _ in tokens], 0, sender=alice)
-    pool.set_management(proxy, sender=deployer)
+    packed_vb = int.from_bytes(networks.provider.get_storage_at(pool.address, 69))
+    networks.provider.set_storage(pool.address, 69, (packed_vb & mask) | weights)
+
+    packed_vb = int.from_bytes(networks.provider.get_storage_at(pool.address, 70))
+    networks.provider.set_storage(pool.address, 70, (packed_vb & mask) | weights)
+    
+    management = accounts[pool.management()]
+    pool.set_management(proxy, sender=management)
     executor.execute_single(pool, pool.accept_management.encode_input(), sender=deployer)
     executor.set_governor(deployer, False, sender=deployer)
     return pool
@@ -114,7 +107,7 @@ def test_weight_redistribute_full_blank(chain, deployer, alice, measure, pool, i
     assert pool.weight(0)[1] == UNIT // 2
     assert pool.weight(1)[1] == UNIT // 2
 
-def test_inclusion(chain, deployer, alice, proxy, measure, lp_token, candidate, provider, pool, ivoting, governor):
+def test_inclusion(chain, deployer, alice, proxy, measure, candidate, provider, pool, ivoting, governor):
     provider.set_rate(candidate, UNIT, sender=deployer)
     ivoting.set_rate_provider(candidate, provider, sender=deployer)
     ivoting.apply(candidate, sender=alice)
@@ -126,6 +119,7 @@ def test_inclusion(chain, deployer, alice, proxy, measure, lp_token, candidate, 
     ivoting.finalize_epoch(sender=alice)
     
     n = pool.num_assets()
+    lp_token = ape.Contract(pool.token())
     assert lp_token.balanceOf(deployer) == 0
     governor.execute(UNIT, UNIT, UNIT//100, 450 * UNIT, 0, sender=deployer)
     assert pool.num_assets() == n + 1
