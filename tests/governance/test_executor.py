@@ -47,6 +47,10 @@ def test_execute_single_whitelist(deployer, alice, bob, proxy, executor, token):
     data = token.transfer.encode_input(deployer, UNIT)
     selector = data[:4].hex()
 
+    # cannot set invalid access flag
+    with ape.reverts():
+        executor.set_access(token, selector, 3, sender=deployer)
+
     # enable whitelist for token transfer
     assert not executor.has_whitelist(token, selector)
     assert not executor.has_blacklist(token, selector)

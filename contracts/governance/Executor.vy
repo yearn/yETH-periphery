@@ -171,6 +171,7 @@ def set_access(_contract: address, _identifier: bytes4, _access: Access):
     @param _access Whether to enable whitelist or blacklist. Zero to disable access control
     """
     assert msg.sender == self.management
+    assert convert(_access, uint256) < 3
     target: uint256 = self._pack_target(_contract, _identifier)
     self.access[target] = _access
     log SetAccess(msg.sender, _contract, _identifier, _access)
