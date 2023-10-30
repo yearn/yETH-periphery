@@ -37,6 +37,7 @@ pending_management: public(address)
 
 measure: public(address)
 executor: public(address)
+packed_quorum: uint256 # current (120) | previous (120) | epoch (16)
 packed_majority: uint256 # current (120) | previous (120) | epoch (16)
 packed_delay: uint256 # current (120) | previous (120) | epoch (16)
 propose_min_weight: public(uint256)
@@ -76,6 +77,9 @@ event SetExecutor:
 event SetDelay:
     delay: uint256
 
+event SetQuorum:
+    quorum: uint256
+
 event SetMajority:
     majority: uint256
 
@@ -108,18 +112,20 @@ EPOCH_MASK: constant(uint256) = 2**16 - 1
 EPOCH_SHIFT: constant(int128) = -240
 
 @external
-def __init__(_genesis: uint256, _measure: address, _executor: address, _majority: uint256, _delay: uint256):
+def __init__(_genesis: uint256, _measure: address, _executor: address, _quorum: uint256, _majority: uint256, _delay: uint256):
     """
     @notice Constructor
     @param _genesis Timestamp of start of epoch 0
     @param _measure Vote weight measure
     @param _executor Governance executor
+    @param _quorum Quorum threshold (18 decimals)
     @param _majority Majority threshold (bps)
     @param _delay Vote enactment delay (seconds)
     """
     assert _genesis <= block.timestamp
     assert _measure != empty(address)
     assert _executor != empty(address)
+    assert _quorum < VALUE_MASK
     assert _majority < VOTE_SCALE
     assert _delay <= VOTE_START
 
@@ -127,6 +133,7 @@ def __init__(_genesis: uint256, _measure: address, _executor: address, _majority
     self.management = msg.sender
     self.measure = _measure
     self.executor = _executor
+    self.packed_quorum = _quorum
     self.packed_majority = _majority
     self.packed_delay = _delay
     assert self._epoch() > 0
@@ -184,6 +191,26 @@ def _vote_open() -> bool:
 
 @external
 @view
+def quorum() -> uint256:
+    """
+    @notice 
+        Get quorum threshold. At least this voting weight must be used
+        on a proposal for it to pass
+    @return Quorum threshold (18 decimals)
+    """
+    return self.packed_quorum & VALUE_MASK
+
+@external
+@view
+def previous_quorum() -> uint256:
+    """
+    @notice Get quorum threshold required to pass a proposal of previous epoch
+    @return Quorum threshold (18 decimals)
+    """
+    return self._quorum(self._epoch() - 1)
+
+@external
+@view
 def majority() -> uint256:
     """
     @notice Get majority threshold required to pass a proposal
@@ -199,6 +226,20 @@ def previous_majority() -> uint256:
     @return Majority threshold (bps)
     """
     return self._majority(self._epoch() - 1)
+
+@internal
+@view
+def _quorum(_epoch: uint256) -> uint256:
+    """
+    @notice Get quorum threshold of an epoch
+    @param _epoch Epoch to query quorum threshold for
+    @return Quorum threshold (18 decimals)
+    @dev Should only be used to query this or last epoch's value
+    """
+    packed: uint256 = self.packed_quorum
+    if _epoch < shift(packed, EPOCH_SHIFT):
+        return shift(packed, PREVIOUS_SHIFT) & VALUE_MASK
+    return packed & VALUE_MASK
 
 @internal
 @view
@@ -300,7 +341,8 @@ def _proposal_state(_idx: uint256) -> uint256:
         yea: uint256 = self.proposals[_idx].yea
         nay: uint256 = self.proposals[_idx].nay
         votes: uint256 = yea + nay
-        if votes > 0 and yea * VOTE_SCALE >= votes * self._majority(vote_epoch):
+        if votes > 0 and votes >= self._quorum(vote_epoch) and \
+            yea * VOTE_SCALE >= votes * self._majority(vote_epoch):
             return STATE_PASSED
 
     return STATE_REJECTED
@@ -436,6 +478,21 @@ def set_executor(_executor: address):
     assert _executor != empty(address)
     self.executor = _executor
     log SetExecutor(_executor)
+
+@external
+def set_quorum(_quorum: uint256):
+    """
+    @notice 
+        Set quorum threshold in 18 decimals. 
+        Proposals need at least this absolute number of votes to pass
+    @param _quorum New quorum threshold (19 decimals)
+    """
+    assert msg.sender == self.management
+    assert _quorum <= VALUE_MASK
+    epoch: uint256 = self._epoch()
+    previous: uint256 = self._quorum(epoch - 1)
+    self.packed_quorum = _quorum | shift(previous, -PREVIOUS_SHIFT) | shift(epoch, -EPOCH_SHIFT)
+    log SetQuorum(_quorum)
 
 @external
 def set_majority(_majority: uint256):

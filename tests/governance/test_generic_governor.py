@@ -36,7 +36,7 @@ def token(project, deployer):
 
 @pytest.fixture
 def governor(chain, project, deployer, measure, executor):
-    governor = project.GenericGovernor.deploy(chain.pending_timestamp - EPOCH_LENGTH, measure, executor, 5000, 0, sender=deployer)
+    governor = project.GenericGovernor.deploy(chain.pending_timestamp - EPOCH_LENGTH, measure, executor, 0, 5000, 0, sender=deployer)
     executor.set_governor(governor, True, sender=deployer)
     return governor
 
@@ -264,6 +264,34 @@ def test_vote_closed_supermajority_nay(chain, deployer, alice, measure, governor
     chain.mine()
     measure.set_vote_weight(alice, UNIT, sender=alice)
     governor.vote(idx, 6000, 4000, sender=alice)
+
+    chain.pending_timestamp += WEEK
+    chain.mine()
+    assert governor.proposal_state(idx) == STATE_REJECTED
+
+def test_vote_closed_quorum(chain, deployer, alice, measure, governor, script):
+    governor.set_quorum(2 * UNIT, sender=deployer)
+    assert governor.previous_quorum() == 0
+    governor.set_quorum(UNIT, sender=deployer)
+    assert governor.previous_quorum() == 0
+
+    idx = governor.propose(script, sender=alice).return_value
+    chain.pending_timestamp += VOTE_START
+    chain.mine()
+    measure.set_vote_weight(alice, 2 * UNIT, sender=alice)
+    governor.vote_yea(idx, sender=alice)
+
+    chain.pending_timestamp += WEEK
+    chain.mine()
+    assert governor.proposal_state(idx) == STATE_PASSED
+
+def test_vote_closed_no_quorum(chain, deployer, alice, measure, governor, script):
+    governor.set_quorum(2 * UNIT, sender=deployer)
+    idx = governor.propose(script, sender=alice).return_value
+    chain.pending_timestamp += VOTE_START
+    chain.mine()
+    measure.set_vote_weight(alice, UNIT, sender=alice)
+    governor.vote_yea(idx, sender=alice)
 
     chain.pending_timestamp += WEEK
     chain.mine()
