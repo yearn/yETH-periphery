@@ -304,11 +304,13 @@ def set_rate_provider(_token: address, _provider: address):
     @param _token Candidate token to set rate provider for
     @param _provider Rate provider address
     """
+    epoch: uint256 = self._epoch()
     assert msg.sender == self.operator
+    assert (not self._vote_open() and self.latest_finalized_epoch + 1 == epoch) or \
+        _provider == empty(address)
     self.rate_providers[_token] = _provider
     log SetRateProvider(_token, _provider)
 
-    epoch: uint256 = self._epoch()
     if _provider not in [empty(address), APPLICATION_DISABLED] and \
         self.applications[_token] == epoch and self.num_candidates[epoch] < 32 and \
         self.candidates_map[epoch][_token] == 0:

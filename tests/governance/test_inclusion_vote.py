@@ -198,7 +198,7 @@ def test_finalize(chain, deployer, alice, bob, measure, token, token2, voting):
     with ape.reverts():
         voting.apply(token, sender=alice)
 
-def test_blank_winner(chain, deployer, alice, bob, measure, token, token2, voting):
+def test_blank_winner(chain, deployer, alice, bob, measure, token, voting):
     epoch = voting.epoch()
     voting.set_rate_provider(token, RATE_PROVIDER, sender=deployer)
     voting.apply(token, sender=alice)
@@ -210,6 +210,30 @@ def test_blank_winner(chain, deployer, alice, bob, measure, token, token2, votin
     assert voting.latest_finalized_epoch() == epoch
     assert voting.winners(epoch) == ZERO_ADDRESS
     assert voting.winner_rate_providers(epoch) == ZERO_ADDRESS
+
+def test_change_rate_provider(chain, deployer, alice, measure, token, voting):
+    voting.set_rate_provider(token, RATE_PROVIDER, sender=deployer)
+    voting.apply(token, sender=alice)
+    measure.set_vote_weight(alice, UNIT, sender=alice)
+
+    chain.pending_timestamp += VOTE_START
+    voting.vote([0, 10000], sender=alice)
+
+    # cant change rate provider when voting has started
+    with ape.reverts():
+        voting.set_rate_provider(token, RATE_PROVIDER2, sender=deployer)
+
+    # but rate provider can be removed
+    with chain.isolate():
+        voting.set_rate_provider(token, ZERO_ADDRESS, sender=deployer)
+
+    # cant change rate provider before epoch has finalized
+    chain.pending_timestamp += WEEK
+    with ape.reverts():
+        voting.set_rate_provider(token, RATE_PROVIDER2, sender=deployer)
+
+    voting.finalize_epoch(sender=deployer)
+    voting.set_rate_provider(token, RATE_PROVIDER2, sender=deployer)
 
 def test_transfer_management(deployer, alice, bob, voting):
     assert voting.management() == deployer.address
