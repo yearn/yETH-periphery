@@ -282,15 +282,16 @@ def finalize_epoch():
         votes: uint256 = self.votes[epoch][i]
         if votes > winner_votes:
             candidate: address = self.candidates[epoch][i]
-            if self.rate_providers[candidate] in [empty(address), APPLICATION_DISABLED]:
+            if candidate != empty(address) and self.rate_providers[candidate] in [empty(address), APPLICATION_DISABLED]:
                 # operator could have unset rate provider after
                 continue
             winner = candidate
             winner_votes = votes
 
     self.winners[epoch] = winner
-    self.winner_rate_providers[epoch] = self.rate_providers[winner]
-    self.rate_providers[winner] = APPLICATION_DISABLED
+    if winner != empty(address):
+        self.winner_rate_providers[epoch] = self.rate_providers[winner]
+        self.rate_providers[winner] = APPLICATION_DISABLED
     self.latest_finalized_epoch = epoch
     log Finalize(epoch, winner)
 

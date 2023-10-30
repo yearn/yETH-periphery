@@ -198,6 +198,19 @@ def test_finalize(chain, deployer, alice, bob, measure, token, token2, voting):
     with ape.reverts():
         voting.apply(token, sender=alice)
 
+def test_blank_winner(chain, deployer, alice, bob, measure, token, token2, voting):
+    epoch = voting.epoch()
+    voting.set_rate_provider(token, RATE_PROVIDER, sender=deployer)
+    voting.apply(token, sender=alice)
+    measure.set_vote_weight(alice, UNIT, sender=alice)
+    chain.pending_timestamp += VOTE_START
+    voting.vote([6000, 4000], sender=alice)
+    chain.pending_timestamp += WEEK
+    voting.finalize_epoch(sender=bob)
+    assert voting.latest_finalized_epoch() == epoch
+    assert voting.winners(epoch) == ZERO_ADDRESS
+    assert voting.winner_rate_providers(epoch) == ZERO_ADDRESS
+
 def test_transfer_management(deployer, alice, bob, voting):
     assert voting.management() == deployer.address
     assert voting.pending_management() == ZERO_ADDRESS
