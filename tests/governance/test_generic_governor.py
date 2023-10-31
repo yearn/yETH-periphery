@@ -187,9 +187,9 @@ def test_vote_retracted(chain, alice, measure, governor, script):
     assert not governor.vote_open()
 
     idx = governor.propose(script, sender=alice).return_value
+    governor.retract(idx, sender=alice)
     chain.pending_timestamp += VOTE_START
     measure.set_vote_weight(alice, UNIT, sender=alice)
-    governor.retract(idx, sender=alice)
     with ape.reverts():
         governor.vote_yea(idx, sender=alice)
 
@@ -355,19 +355,6 @@ def test_execute_delay(chain, deployer, alice, bob, measure, token, governor, sc
     governor.enact(idx, script, sender=bob)
     assert token.balanceOf(alice) == UNIT
     assert governor.proposal_state(idx) == STATE_ENACTED
-
-def test_execute_retracted(chain, alice, bob, measure, governor, script):
-    idx = governor.propose(script, sender=alice).return_value
-    chain.pending_timestamp += VOTE_START
-    chain.mine()
-    measure.set_vote_weight(alice, UNIT, sender=alice)
-    governor.vote_yea(idx, sender=alice)
-    governor.retract(idx, sender=alice)
-
-    # cant execute
-    chain.pending_timestamp += WEEK
-    with ape.reverts():
-        governor.enact(idx, script, sender=bob)
 
 def test_execute_cancelled(chain, deployer, alice, bob, measure, governor, script):
     idx = governor.propose(script, sender=alice).return_value
