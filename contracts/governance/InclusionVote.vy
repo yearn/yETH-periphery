@@ -345,7 +345,7 @@ def set_treasury(_treasury: address):
     @notice Set the treasury. The treasury can sweep (application fee) tokens
     @param _treasury New treasury address
     """
-    assert msg.sender == self.management or msg.sender == self.treasury
+    assert msg.sender == self.treasury
     self.treasury = _treasury
     log SetTreasury(_treasury)
 
