@@ -18,7 +18,6 @@ from vyper.interfaces import ERC20
 interface Voting:
     def genesis() -> uint256: view
     def latest_finalized_epoch() -> uint256: view
-    def candidates_map(_epoch: uint256, _candidate: address) -> uint256: view
     def winners(_epoch: uint256) -> address: view
     def total_votes(_epoch: uint256) -> uint256: view
     def votes_user(_account: address, _epoch: uint256) -> uint256: view
@@ -78,8 +77,6 @@ event SetManagement:
 
 WEEK: constant(uint256) = 7 * 24 * 60 * 60
 EPOCH_LENGTH: constant(uint256) = 4 * WEEK
-VOTE_LENGTH: constant(uint256) = WEEK
-VOTE_START: constant(uint256) = EPOCH_LENGTH - VOTE_LENGTH
 
 @external
 def __init__(_voting: address):

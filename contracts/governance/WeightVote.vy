@@ -12,7 +12,6 @@
 """
 
 interface Measure:
-    def total_vote_weight() -> uint256: view
     def vote_weight(_account: address) -> uint256: view
 
 interface Pool:

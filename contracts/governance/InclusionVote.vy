@@ -21,7 +21,6 @@
 from vyper.interfaces import ERC20
 
 interface Measure:
-    def total_vote_weight() -> uint256: view
     def vote_weight(_account: address) -> uint256: view
 
 genesis: public(immutable(uint256))
