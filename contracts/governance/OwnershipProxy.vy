@@ -45,5 +45,6 @@ def set_management(_management: address):
     @param _management New management address
     """
     assert msg.sender == self
+    assert _management != empty(address)
     self.management = _management
     log SetManagement(_management)

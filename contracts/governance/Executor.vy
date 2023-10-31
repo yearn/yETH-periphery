@@ -159,6 +159,7 @@ def set_governor(_governor: address, _flag: bool):
     @param _flag True: set governor, False: unset governor
     """
     assert msg.sender == self.management
+    assert _governor != empty(address)
     self.governors[_governor] = _flag
     log SetGovernor(msg.sender, _governor, _flag)
 
@@ -171,6 +172,7 @@ def set_access(_contract: address, _identifier: bytes4, _access: Access):
     @param _access Whether to enable whitelist or blacklist. Zero to disable access control
     """
     assert msg.sender == self.management
+    assert _contract != empty(address)
     assert convert(_access, uint256) < 3
     target: uint256 = self._pack_target(_contract, _identifier)
     self.access[target] = _access
@@ -186,6 +188,7 @@ def whitelist(_contract: address, _identifier: bytes4, _caller: address, _whitel
     @param _whitelisted True: add to whitelist, False: remove from whitelist
     """
     assert msg.sender == self.management
+    assert _contract != empty(address)
     target: uint256 = self._pack_target(_contract, _identifier)
     self.whitelisted[target][_caller] = _whitelisted
     log Whitelist(_contract, _identifier, _caller, _whitelisted)
@@ -225,6 +228,7 @@ def blacklist(_contract: address, _identifier: bytes4, _caller: address, _blackl
     @param _blacklisted True: add to blacklist, False: remove from blacklist
     """
     assert msg.sender == self.management
+    assert _contract != empty(address)
     target: uint256 = self._pack_target(_contract, _identifier)
     self.blacklisted[target][_caller] = _blacklisted
     log Blacklist(_contract, _identifier, _caller, _blacklisted)
