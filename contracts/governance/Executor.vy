@@ -12,7 +12,7 @@
 """
 
 interface Proxy:
-    def execute(_to: address, _data: Bytes[65536]): nonpayable
+    def execute(_to: address, _data: Bytes[2048]): nonpayable
 
 enum Access:
     WHITELIST
@@ -29,7 +29,7 @@ blacklisted: HashMap[uint256, HashMap[address, bool]] # target => governor => bl
 event Execute:
     by: indexed(address)
     contract: indexed(address)
-    data: Bytes[65536]
+    data: Bytes[2048]
 
 event SetGovernor:
     by: indexed(address)
@@ -96,7 +96,7 @@ def execute_single(_to: address, _data: Bytes[2048]):
     log Execute(msg.sender, _to, _data)
 
 @external
-def execute(_script: Bytes[65536]):
+def execute(_script: Bytes[2048]):
     """
     @notice Execute a single script consisting of one or more calls
     @param _script Script to execute
@@ -127,7 +127,7 @@ def execute(_script: Bytes[65536]):
         contract: address = empty(address)
         identifier: bytes4 = empty(bytes4)
         contract, identifier = self._unpack_target(target)
-        calldata: Bytes[65536] = slice(_script, i, size)
+        calldata: Bytes[2048] = slice(_script, i, size)
 
         i += size
         assert i <= len(_script)
