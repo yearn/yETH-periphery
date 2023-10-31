@@ -30,11 +30,9 @@ def test_vote(chain, alice, bob, measure, voting):
     with ape.reverts():
         voting.vote([6000, 5000], sender=alice)
 
-    assert voting.num_assets(epoch) == 0
     assert voting.total_votes(epoch) == 0
     assert not voting.voted(alice, epoch)
     voting.vote([6000, 4000], sender=alice)
-    assert voting.num_assets(epoch) == 2
     assert voting.total_votes(epoch) == 10 * UNIT
     assert voting.voted(alice, epoch)
     assert voting.votes(epoch, 0) == 6 * UNIT

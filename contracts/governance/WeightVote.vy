@@ -25,7 +25,6 @@ management: public(address)
 pending_management: public(address)
 
 measure: public(address)
-num_assets: public(HashMap[uint256, uint256])
 total_votes: public(HashMap[uint256, uint256]) # epoch => total votes
 votes: public(HashMap[uint256, uint256[33]]) # epoch => [blank vote, ..protocol votes..]
 votes_user: public(HashMap[address, HashMap[uint256, uint256[33]]]) # user => epoch => [blank vote, ..protocol votes..]
@@ -116,11 +115,8 @@ def vote(_votes: DynArray[uint256, 33]):
     assert self._vote_open()
     assert not self.voted[msg.sender][epoch]
 
-    n: uint256 = self.num_assets[epoch]
-    if n == 0:
-        n = Pool(pool).num_assets()
-        assert n > 0
-        self.num_assets[epoch] = n
+    n: uint256 = Pool(pool).num_assets()
+    assert n > 0
     assert len(_votes) <= n + 1
 
     weight: uint256 = Measure(self.measure).vote_weight(msg.sender)
