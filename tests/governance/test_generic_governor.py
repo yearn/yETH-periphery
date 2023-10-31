@@ -242,6 +242,10 @@ def test_vote_closed_nay(chain, alice, bob, measure, governor, script):
     assert governor.proposal_state(idx) == STATE_REJECTED
 
 def test_vote_closed_supermajority_yea(chain, deployer, alice, measure, governor, script):
+    # majority needs to be at least 50%
+    with ape.reverts():
+        governor.set_majority(4000, sender=deployer)
+
     governor.set_majority(6000, sender=deployer)
     assert governor.previous_majority() == 5000
     governor.set_majority(6666, sender=deployer)

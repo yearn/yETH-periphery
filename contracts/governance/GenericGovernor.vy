@@ -125,8 +125,8 @@ def __init__(_genesis: uint256, _measure: address, _executor: address, _quorum: 
     assert _genesis <= block.timestamp
     assert _measure != empty(address)
     assert _executor != empty(address)
-    assert _quorum < VALUE_MASK
-    assert _majority < VOTE_SCALE
+    assert _quorum <= VALUE_MASK
+    assert _majority >= VOTE_SCALE / 2 and _majority <= VOTE_SCALE
     assert _delay <= VOTE_START
 
     genesis = _genesis
@@ -503,7 +503,7 @@ def set_majority(_majority: uint256):
     @param _majority New majority threshold (bps)
     """
     assert msg.sender == self.management
-    assert _majority <= VOTE_SCALE
+    assert _majority >= VOTE_SCALE / 2 and _majority <= VOTE_SCALE
     epoch: uint256 = self._epoch()
     previous: uint256 = self._majority(epoch - 1)
     self.packed_majority = _majority | shift(previous, -PREVIOUS_SHIFT) | shift(epoch, -EPOCH_SHIFT)
