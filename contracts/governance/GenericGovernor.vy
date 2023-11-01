@@ -484,7 +484,7 @@ def set_quorum(_quorum: uint256):
     @notice 
         Set quorum threshold in 18 decimals. 
         Proposals need at least this absolute number of votes to pass
-    @param _quorum New quorum threshold (19 decimals)
+    @param _quorum New quorum threshold (18 decimals)
     """
     assert msg.sender == self.management
     assert _quorum <= VALUE_MASK
