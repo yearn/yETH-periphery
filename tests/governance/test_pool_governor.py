@@ -45,6 +45,8 @@ def provider(project, deployer):
 def pool(networks, accounts, deployer, proxy, executor):
     # modify deployed pool slots to 2 assets with 50% weight
     pool = ape.Contract(POOL)
+    management = accounts[pool.management()]
+    pool.stop_ramp(sender=management)
     networks.provider.set_storage(pool.address, 1, int(10**18).to_bytes(32))
     networks.provider.set_storage(pool.address, 4, int(2).to_bytes(32))
 
@@ -57,7 +59,6 @@ def pool(networks, accounts, deployer, proxy, executor):
     packed_vb = int.from_bytes(networks.provider.get_storage_at(pool.address, 70))
     networks.provider.set_storage(pool.address, 70, (packed_vb & mask) | weights)
     
-    management = accounts[pool.management()]
     pool.set_management(proxy, sender=management)
     executor.execute_single(pool, pool.accept_management.encode_input(), sender=deployer)
     executor.set_governor(deployer, False, sender=deployer)
