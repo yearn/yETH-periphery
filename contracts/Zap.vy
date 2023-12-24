@@ -2,7 +2,7 @@
 """
 @title yETH stake zap
 @author 0xkorin, Yearn Finance
-@license Copyright (c) Yearn Finance, 2023 - all rights reserved
+@license GNU AGPLv3
 """
 
 from vyper.interfaces import ERC20
@@ -17,6 +17,15 @@ token: public(immutable(address))
 pool: public(immutable(address))
 staking: public(immutable(address))
 
+management: public(address)
+pending_management: public(address)
+
+event PendingManagement:
+    management: indexed(address)
+
+event SetManagement:
+    management: indexed(address)
+
 @external
 def __init__(_token: address, _pool: address, _staking: address):
     """
@@ -28,6 +37,7 @@ def __init__(_token: address, _pool: address, _staking: address):
     token = _token
     pool = _pool
     staking = _staking
+    self.management = msg.sender
 
     assert ERC20(token).approve(staking, max_value(uint256), default_return_value=True)
 
@@ -66,3 +76,38 @@ def add_liquidity(
     lp_amount: uint256 = Pool(pool).add_liquidity(_amounts, _min_lp_amount, self)
     shares: uint256 = ERC4626(staking).deposit(lp_amount, _receiver)
     return lp_amount, shares
+
+@external
+def rescue(_token: address, _receiver: address):
+    """
+    @notice Rescue tokens from this contract
+    @param _token The token to be rescued
+    @param _receiver Receiver of rescued tokens
+    """
+    assert msg.sender == self.management
+    amount: uint256 = ERC20(_token).balanceOf(self)
+    assert ERC20(_token).transfer(_receiver, amount, default_return_value=True)
+
+@external
+def set_management(_management: address):
+    """
+    @notice 
+        Set the pending management address.
+        Needs to be accepted by that account separately to transfer management over
+    @param _management New pending management address
+    """
+    assert msg.sender == self.management
+    self.pending_management = _management
+    log PendingManagement(_management)
+
+@external
+def accept_management():
+    """
+    @notice 
+        Accept management role.
+        Can only be called by account previously marked as pending management by current management
+    """
+    assert msg.sender == self.pending_management
+    self.pending_management = empty(address)
+    self.management = msg.sender
+    log SetManagement(msg.sender)
