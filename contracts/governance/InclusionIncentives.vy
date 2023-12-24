@@ -27,6 +27,7 @@ voting: public(immutable(Voting))
 management: public(address)
 pending_management: public(address)
 treasury: public(address)
+fee_rate: public(uint256)
 incentives: public(HashMap[uint256, HashMap[address, HashMap[address, uint256]]]) # epoch => candidate => incentive token => incentive amount
 incentives_depositor: public(HashMap[address, HashMap[uint256, HashMap[address, HashMap[address, uint256]]]]) # depositor => epoch => candidate => incentive token => incentive amount
 unclaimed: public(HashMap[uint256, HashMap[address, uint256]]) # epoch => incentive token => incentive amount
@@ -77,6 +78,7 @@ event SetManagement:
 
 WEEK: constant(uint256) = 7 * 24 * 60 * 60
 EPOCH_LENGTH: constant(uint256) = 4 * WEEK
+FEE_SCALE: constant(uint256) = 10_000
 
 @external
 def __init__(_voting: address):
@@ -123,7 +125,8 @@ def deposit(_candidate: address, _token: address, _amount: uint256):
     """
     assert (block.timestamp - genesis) % EPOCH_LENGTH <= self.deposit_deadline
     epoch: uint256 = self._epoch()
-    self.incentives[epoch][_candidate][_token] += _amount
+    fee: uint256 = _amount * self.fee_rate / FEE_SCALE
+    self.incentives[epoch][_candidate][_token] += _amount - fee
     self.incentives_depositor[msg.sender][epoch][_candidate][_token] += _amount
     self.unclaimed[epoch][_token] += _amount
 
@@ -301,6 +304,16 @@ def set_claim_deadline(_deadline: uint256):
     assert _deadline >= 1
     self.claim_deadline = _deadline
     log SetClaimDeadline(_deadline)
+
+@external
+def set_fee_rate(_fee_rate: uint256):
+    """
+    @notice Set the incentive fee rate
+    @param _fee_rate New fee rate (bps)
+    """
+    assert msg.sender == self.management
+    assert _fee_rate <= FEE_SCALE / 10
+    self.fee_rate = _fee_rate
 
 @external
 def set_management(_management: address):

@@ -26,6 +26,7 @@ voting: public(immutable(Voting))
 management: public(address)
 pending_management: public(address)
 treasury: public(address)
+fee_rate: public(uint256)
 incentives: public(HashMap[uint256, HashMap[uint256, HashMap[address, uint256]]]) # epoch => idx => incentive token => incentive amount
 unclaimed: public(HashMap[uint256, HashMap[address, uint256]]) # epoch => incentive token => incentive amount
 user_claimed: public(HashMap[address, HashMap[uint256, HashMap[uint256, HashMap[address, bool]]]]) # account => epoch => idx => incentive token => claimed?
@@ -62,6 +63,7 @@ WEEK: constant(uint256) = 7 * 24 * 60 * 60
 EPOCH_LENGTH: constant(uint256) = 4 * WEEK
 VOTE_LENGTH: constant(uint256) = WEEK
 VOTE_START: constant(uint256) = EPOCH_LENGTH - VOTE_LENGTH
+FEE_SCALE: constant(uint256) = 10_000
 
 @external
 def __init__(_pool: address, _voting: address):
@@ -111,7 +113,8 @@ def deposit(_idx: uint256, _token: address, _amount: uint256):
     assert (block.timestamp - genesis) % EPOCH_LENGTH <= self.deposit_deadline
     assert pool.num_assets() >= _idx
     epoch: uint256 = self._epoch()
-    self.incentives[epoch][_idx][_token] += _amount
+    fee: uint256 = _amount * self.fee_rate / FEE_SCALE
+    self.incentives[epoch][_idx][_token] += _amount - fee
     self.unclaimed[epoch][_token] += _amount
 
     assert ERC20(_token).transferFrom(msg.sender, self, _amount, default_return_value=True)
@@ -188,9 +191,10 @@ def _claim(_epoch: uint256, _idx: uint256, _token: address, _account: address):
 @view
 def sweepable(_epoch: uint256, _token: address) -> uint256:
     """
-    @notice Query whether an incentive can be swept
+    @notice Query how much of an incentive can be swept
     @param _epoch Epoch to query for
     @param _token Incentive token to query for
+    @return Amount of tokens that can be swept
     """
     if self._epoch() <= _epoch + self.claim_deadline:
         return 0
@@ -249,6 +253,16 @@ def set_claim_deadline(_deadline: uint256):
     assert msg.sender == self.management
     assert _deadline >= 1
     self.claim_deadline = _deadline
+
+@external
+def set_fee_rate(_fee_rate: uint256):
+    """
+    @notice Set the incentive fee rate
+    @param _fee_rate New fee rate (bps)
+    """
+    assert msg.sender == self.management
+    assert _fee_rate <= FEE_SCALE / 10
+    self.fee_rate = _fee_rate
 
 @external
 def set_management(_management: address):

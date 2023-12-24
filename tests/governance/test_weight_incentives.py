@@ -82,6 +82,30 @@ def test_claim(chain, alice, bob, measure, incentive_token, voting, incentives):
     incentives.claim(epoch, 2, incentive_token, bob, sender=bob)
     assert incentive_token.balanceOf(bob) == 4 * UNIT
 
+def test_claim_fee(chain, deployer, alice, measure, incentive_token, voting, incentives):
+    epoch = incentives.epoch()
+    incentives.set_fee_rate(1000, sender=deployer)
+    incentive_token.mint(alice, 10 * UNIT, sender=alice)
+    incentive_token.approve(incentives, 10 * UNIT, sender=alice)
+    incentives.deposit(2, incentive_token, 10 * UNIT, sender=alice)
+    measure.set_vote_weight(alice, UNIT, sender=alice)
+    chain.pending_timestamp += VOTE_START
+    voting.vote([5000, 0, 5000], sender=alice)
+    chain.pending_timestamp += WEEK
+    chain.mine()
+    assert incentives.claimable(epoch, 2, incentive_token, alice) == 9 * UNIT
+    incentives.claim(epoch, 2, incentive_token, sender=alice)
+    assert incentives.claimable(epoch, 2, incentive_token, alice) == 0
+    assert incentive_token.balanceOf(alice) == 9 * UNIT
+    assert incentives.unclaimed(epoch, incentive_token) == UNIT
+
+    # claim fee through a sweep
+    chain.pending_timestamp += EPOCH_LENGTH
+    chain.mine()
+    assert incentives.sweepable(epoch, incentive_token) == UNIT
+    incentives.sweep(epoch, incentive_token, sender=deployer)
+    assert incentive_token.balanceOf(deployer) == UNIT
+
 def test_sweep(chain, deployer, alice, bob, charlie, measure, incentive_token, voting, incentives):
     epoch = incentives.epoch()
     incentive_token.mint(alice, 6 * UNIT, sender=alice)
@@ -96,7 +120,7 @@ def test_sweep(chain, deployer, alice, bob, charlie, measure, incentive_token, v
     incentives.claim(epoch, 2, incentive_token, alice, sender=bob)
 
     # unclaimed incentives cannot be swept yet
-    incentives.sweepable(epoch, incentive_token) == 0
+    assert incentives.sweepable(epoch, incentive_token) == 0
     with ape.reverts():
         incentives.sweep(epoch, incentive_token, sender=deployer)
 

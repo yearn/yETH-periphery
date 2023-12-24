@@ -88,6 +88,33 @@ def test_claim(chain, deployer, alice, bob, measure, token, incentive_token, vot
     incentives.claim(epoch, incentive_token, bob, sender=bob)
     assert incentive_token.balanceOf(bob) == 4 * UNIT
 
+def test_claim_fee(chain, deployer, alice, measure, token, incentive_token, voting, incentives):
+    epoch = incentives.epoch()
+    incentives.set_fee_rate(1000, sender=deployer)
+    incentive_token.mint(alice, 10 * UNIT, sender=alice)
+    incentive_token.approve(incentives, 10 * UNIT, sender=alice)
+    incentives.deposit(token, incentive_token, 10 * UNIT, sender=alice)
+    voting.set_rate_provider(token, RATE_PROVIDER, sender=deployer)
+    voting.apply(token, sender=alice)
+    measure.set_vote_weight(alice, UNIT, sender=alice)
+    chain.pending_timestamp += VOTE_START
+    voting.vote([0, 10000], sender=alice)
+    chain.pending_timestamp += WEEK
+    voting.finalize_epoch(sender=alice)
+
+    assert incentives.claimable(epoch, incentive_token, alice) == 9 * UNIT
+    incentives.claim(epoch, incentive_token, sender=alice)
+    assert incentives.claimable(epoch, incentive_token, alice) == 0
+    assert incentive_token.balanceOf(alice) == 9 * UNIT
+    assert incentives.unclaimed(epoch, incentive_token) == UNIT
+
+    # claim fee through a sweep
+    chain.pending_timestamp += EPOCH_LENGTH
+    chain.mine()
+    assert incentives.sweepable(epoch, incentive_token) == UNIT
+    incentives.sweep(epoch, incentive_token, sender=deployer)
+    assert incentive_token.balanceOf(deployer) == UNIT
+
 def test_refund(chain, deployer, alice, bob, measure, token, incentive_token, voting, incentives):
     epoch = incentives.epoch()
     incentive_token.mint(alice, UNIT, sender=alice)
@@ -131,7 +158,7 @@ def test_sweep(chain, deployer, alice, bob, charlie, measure, token, incentive_t
     incentives.claim(epoch, incentive_token, alice, sender=bob)
 
     # unclaimed incentives cannot be swept yet
-    incentives.sweepable(epoch, incentive_token) == 0
+    assert incentives.sweepable(epoch, incentive_token) == 0
     with ape.reverts():
         incentives.sweep(epoch, incentive_token, sender=deployer)
 
