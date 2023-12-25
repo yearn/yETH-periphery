@@ -28,6 +28,7 @@ struct Proposal:
     hash: bytes32
     yea: uint256
     nay: uint256
+    abstain: uint256
 
 genesis: public(immutable(uint256))
 
@@ -62,6 +63,7 @@ event Vote:
     idx: indexed(uint256)
     yea: uint256
     nay: uint256
+    abstain: uint256
 
 event Enact:
     idx: indexed(uint256)
@@ -339,9 +341,12 @@ def _proposal_state(_idx: uint256) -> uint256:
     if current_epoch == vote_epoch + 1:
         yea: uint256 = self.proposals[_idx].yea
         nay: uint256 = self.proposals[_idx].nay
-        votes: uint256 = yea + nay
-        if votes > 0 and votes >= self._quorum(vote_epoch) and \
-            yea * VOTE_SCALE >= votes * self._majority(vote_epoch):
+        abstain: uint256 = self.proposals[_idx].abstain
+
+        counted: uint256 = yea + nay # for majority purposes
+        total: uint256 = counted + abstain # for quorum purposes
+        if counted > 0 and total >= self._quorum(vote_epoch) and \
+            yea * VOTE_SCALE >= counted * self._majority(vote_epoch):
             return STATE_PASSED
 
     return STATE_REJECTED
@@ -396,7 +401,7 @@ def vote_yea(_idx: uint256):
     @notice Vote in favor of a proposal
     @param _idx Proposal index
     """
-    self._vote(_idx, VOTE_SCALE, 0)
+    self._vote(_idx, VOTE_SCALE, 0, 0)
 
 @external
 def vote_nay(_idx: uint256):
@@ -404,20 +409,29 @@ def vote_nay(_idx: uint256):
     @notice Vote in opposition of a proposal
     @param _idx Proposal index
     """
-    self._vote(_idx, 0, VOTE_SCALE)
+    self._vote(_idx, 0, VOTE_SCALE, 0)
 
 @external
-def vote(_idx: uint256, _yea: uint256, _nay: uint256):
+def vote_abstain(_idx: uint256):
+    """
+    @notice Vote in abstention of a proposal
+    @param _idx Proposal index
+    """
+    self._vote(_idx, 0, 0, VOTE_SCALE)
+
+@external
+def vote(_idx: uint256, _yea: uint256, _nay: uint256, _abstain: uint256):
     """
     @notice Weighted vote on a proposal
     @param _idx Proposal index
     @param _yea Fraction of votes in favor
     @param _nay Fraction of votes in opposition
+    @param _abstain Fraction of abstained votes
     """
-    self._vote(_idx, _yea, _nay)
+    self._vote(_idx, _yea, _nay, _abstain)
 
 @internal
-def _vote(_idx: uint256, _yea: uint256, _nay: uint256):
+def _vote(_idx: uint256, _yea: uint256, _nay: uint256, _abstain: uint256):
     """
     @notice Weighted vote on a proposal
     """
@@ -425,7 +439,7 @@ def _vote(_idx: uint256, _yea: uint256, _nay: uint256):
     assert self.proposals[_idx].epoch == self._epoch()
     assert self.proposals[_idx].state == STATE_PROPOSED
     assert not self.voted[msg.sender][_idx]
-    assert _yea + _nay == VOTE_SCALE
+    assert _yea + _nay + _abstain == VOTE_SCALE
 
     weight: uint256 = Measure(self.measure).vote_weight(msg.sender)
     assert weight > 0
@@ -438,7 +452,11 @@ def _vote(_idx: uint256, _yea: uint256, _nay: uint256):
     if _nay > 0:
         nay = weight * _nay / VOTE_SCALE
         self.proposals[_idx].nay += nay
-    log Vote(msg.sender, _idx, yea, nay)
+    abstain: uint256 = 0
+    if _abstain > 0:
+        abstain = weight * _abstain / VOTE_SCALE
+        self.proposals[_idx].abstain += abstain
+    log Vote(msg.sender, _idx, yea, nay, abstain)
 
 @external
 def enact(_idx: uint256, _script: Bytes[65536]):

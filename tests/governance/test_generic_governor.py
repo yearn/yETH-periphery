@@ -147,6 +147,33 @@ def test_vote_nay(chain, alice, bob, measure, governor, script):
     governor.vote_nay(idx, sender=bob)
     assert governor.proposal(idx).nay == 3 * UNIT
 
+def test_vote_abstain(chain, alice, bob, measure, governor, script):
+    assert governor.propose_open()
+    assert not governor.vote_open()
+    idx = governor.propose(script, sender=alice).return_value
+    chain.pending_timestamp += VOTE_START
+    chain.mine()
+    assert governor.vote_open()
+
+    # no voting power
+    with ape.reverts():
+        governor.vote_abstain(idx, sender=alice)
+    
+    measure.set_vote_weight(alice, UNIT, sender=alice)
+    assert not governor.voted(alice, idx)
+    governor.vote_abstain(idx, sender=alice)
+    assert governor.voted(alice, idx)
+    assert governor.proposal(idx).abstain == UNIT
+
+    # no double votes
+    with ape.reverts():
+        governor.vote_abstain(idx, sender=alice)
+
+    # votes are added
+    measure.set_vote_weight(bob, 2 * UNIT, sender=alice)
+    governor.vote_abstain(idx, sender=bob)
+    assert governor.proposal(idx).abstain == 3 * UNIT
+
 def test_vote(chain, alice, bob, measure, governor, script):
     assert governor.propose_open()
     assert not governor.vote_open()
@@ -158,29 +185,35 @@ def test_vote(chain, alice, bob, measure, governor, script):
 
     # no voting power
     with ape.reverts():
-        governor.vote(idx, 4000, 6000, sender=alice)
+        governor.vote(idx, 4000, 6000, 0, sender=alice)
     
     measure.set_vote_weight(alice, 10 * UNIT, sender=alice)
 
     # votes dont add up
     with ape.reverts():
-        governor.vote(idx, 6000, 6000, sender=alice)
+        governor.vote(idx, 1000, 1000, 1000, sender=alice)
+    with ape.reverts():
+        governor.vote(idx, 6000, 6000, 0, sender=alice)
+    with ape.reverts():
+        governor.vote(idx, 6000, 4000, 1000, sender=alice)
 
     assert not governor.voted(alice, idx)
-    governor.vote(idx, 4000, 6000, sender=alice)
+    governor.vote(idx, 4000, 5000, 1000, sender=alice)
     assert governor.voted(alice, idx)
     assert governor.proposal(idx).yea == 4 * UNIT
-    assert governor.proposal(idx).nay == 6 * UNIT
+    assert governor.proposal(idx).nay == 5 * UNIT
+    assert governor.proposal(idx).abstain == UNIT
 
     # no double votes
     with ape.reverts():
-        governor.vote(idx, 6000, 4000, sender=alice)
+        governor.vote(idx, 6000, 4000, 0, sender=alice)
 
     # votes are added
     measure.set_vote_weight(bob, 20 * UNIT, sender=alice)
-    governor.vote(idx, 5000, 5000, sender=bob)
-    assert governor.proposal(idx).yea == 14 * UNIT
-    assert governor.proposal(idx).nay == 16 * UNIT
+    governor.vote(idx, 4000, 4000, 2000, sender=bob)
+    assert governor.proposal(idx).yea == 12 * UNIT
+    assert governor.proposal(idx).nay == 13 * UNIT
+    assert governor.proposal(idx).abstain == 5 * UNIT
 
 def test_vote_retracted(chain, alice, measure, governor, script):
     assert governor.propose_open()
@@ -210,10 +243,19 @@ def test_vote_closed_no_votes(chain, alice, governor, script):
     chain.mine()
     assert governor.proposal_state(idx) == STATE_REJECTED
 
+def test_vote_closed_no_counted_votes(chain, alice, measure, governor, script):
+    idx = governor.propose(script, sender=alice).return_value
+    chain.pending_timestamp += VOTE_START
+    measure.set_vote_weight(alice, UNIT, sender=alice)
+    governor.vote_abstain(idx, sender=alice)
+
+    chain.pending_timestamp += WEEK
+    chain.mine()
+    assert governor.proposal_state(idx) == STATE_REJECTED
+
 def test_vote_closed_yea(chain, alice, bob, measure, governor, script):
     idx = governor.propose(script, sender=alice).return_value
     chain.pending_timestamp += VOTE_START
-    chain.mine()
     measure.set_vote_weight(alice, 2 * UNIT, sender=alice)
     governor.vote_yea(idx, sender=alice)
     measure.set_vote_weight(bob, UNIT, sender=alice)
@@ -228,14 +270,37 @@ def test_vote_closed_yea(chain, alice, bob, measure, governor, script):
     chain.mine()
     assert governor.proposal_state(idx) == STATE_REJECTED
 
+def test_vote_closed_yea_abstain(chain, alice, bob, measure, governor, script):
+    idx = governor.propose(script, sender=alice).return_value
+    chain.pending_timestamp += VOTE_START
+    measure.set_vote_weight(alice, UNIT, sender=alice)
+    governor.vote_yea(idx, sender=alice)
+    measure.set_vote_weight(bob, 4 * UNIT, sender=alice)
+    governor.vote_abstain(idx, sender=bob)
+
+    chain.pending_timestamp += WEEK
+    chain.mine()
+    assert governor.proposal_state(idx) == STATE_PASSED
+
 def test_vote_closed_nay(chain, alice, bob, measure, governor, script):
     idx = governor.propose(script, sender=alice).return_value
     chain.pending_timestamp += VOTE_START
-    chain.mine()
     measure.set_vote_weight(alice, 2 * UNIT, sender=alice)
     governor.vote_nay(idx, sender=alice)
     measure.set_vote_weight(bob, UNIT, sender=alice)
     governor.vote_yea(idx, sender=bob)
+
+    chain.pending_timestamp += WEEK
+    chain.mine()
+    assert governor.proposal_state(idx) == STATE_REJECTED
+
+def test_vote_closed_nay_abstain(chain, alice, bob, measure, governor, script):
+    idx = governor.propose(script, sender=alice).return_value
+    chain.pending_timestamp += VOTE_START
+    measure.set_vote_weight(alice, UNIT, sender=alice)
+    governor.vote_nay(idx, sender=alice)
+    measure.set_vote_weight(bob, 4 * UNIT, sender=alice)
+    governor.vote_abstain(idx, sender=bob)
 
     chain.pending_timestamp += WEEK
     chain.mine()
@@ -253,9 +318,8 @@ def test_vote_closed_supermajority_yea(chain, deployer, alice, measure, governor
 
     idx = governor.propose(script, sender=alice).return_value
     chain.pending_timestamp += VOTE_START
-    chain.mine()
     measure.set_vote_weight(alice, UNIT, sender=alice)
-    governor.vote(idx, 7000, 3000, sender=alice)
+    governor.vote(idx, 7000, 3000, 0, sender=alice)
 
     chain.pending_timestamp += WEEK
     chain.mine()
@@ -265,9 +329,8 @@ def test_vote_closed_supermajority_nay(chain, deployer, alice, measure, governor
     governor.set_majority(6666, sender=deployer)
     idx = governor.propose(script, sender=alice).return_value
     chain.pending_timestamp += VOTE_START
-    chain.mine()
     measure.set_vote_weight(alice, UNIT, sender=alice)
-    governor.vote(idx, 6000, 4000, sender=alice)
+    governor.vote(idx, 6000, 4000, 0, sender=alice)
 
     chain.pending_timestamp += WEEK
     chain.mine()
@@ -281,9 +344,21 @@ def test_vote_closed_quorum(chain, deployer, alice, measure, governor, script):
 
     idx = governor.propose(script, sender=alice).return_value
     chain.pending_timestamp += VOTE_START
-    chain.mine()
     measure.set_vote_weight(alice, 2 * UNIT, sender=alice)
     governor.vote_yea(idx, sender=alice)
+
+    chain.pending_timestamp += WEEK
+    chain.mine()
+    assert governor.proposal_state(idx) == STATE_PASSED
+
+def test_vote_closed_quorum_abstain(chain, deployer, alice, bob, measure, governor, script):
+    governor.set_quorum(2 * UNIT, sender=deployer)
+    idx = governor.propose(script, sender=alice).return_value
+    chain.pending_timestamp += VOTE_START
+    measure.set_vote_weight(alice, UNIT, sender=alice)
+    measure.set_vote_weight(bob, UNIT, sender=bob)
+    governor.vote_yea(idx, sender=alice)
+    governor.vote_abstain(idx, sender=bob)
 
     chain.pending_timestamp += WEEK
     chain.mine()
@@ -293,7 +368,6 @@ def test_vote_closed_no_quorum(chain, deployer, alice, measure, governor, script
     governor.set_quorum(2 * UNIT, sender=deployer)
     idx = governor.propose(script, sender=alice).return_value
     chain.pending_timestamp += VOTE_START
-    chain.mine()
     measure.set_vote_weight(alice, UNIT, sender=alice)
     governor.vote_yea(idx, sender=alice)
 
@@ -345,7 +419,6 @@ def test_execute_delay(chain, deployer, alice, bob, measure, token, governor, sc
 
     idx = governor.propose(script, sender=alice).return_value
     chain.pending_timestamp += VOTE_START
-    chain.mine()
     measure.set_vote_weight(alice, UNIT, sender=alice)
     governor.vote_yea(idx, sender=alice)
 
@@ -448,7 +521,7 @@ def test_ordering(chain, deployer, alice, measure, token, proxy, executor, gover
 
     chain.pending_timestamp += VOTE_START
     measure.set_vote_weight(alice, UNIT, sender=alice)
-    governor.vote(idx1, 5000, 5000, sender=alice)
+    governor.vote(idx1, 5000, 5000, 0, sender=alice)
     governor.vote_yea(idx2, sender=alice)
     chain.pending_timestamp += WEEK
 
