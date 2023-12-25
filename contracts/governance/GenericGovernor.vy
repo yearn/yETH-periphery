@@ -19,7 +19,7 @@ interface Measure:
     def vote_weight(_account: address) -> uint256: view
 
 interface Executor:
-    def execute(_script: Bytes[65536]): nonpayable
+    def execute(_script: Bytes[2048]): nonpayable
 
 struct Proposal:
     epoch: uint256
@@ -50,7 +50,7 @@ event Propose:
     idx: indexed(uint256)
     epoch: indexed(uint256)
     author: indexed(address)
-    script: Bytes[65536]
+    script: Bytes[2048]
 
 event Retract:
     idx: indexed(uint256)
@@ -352,7 +352,7 @@ def _proposal_state(_idx: uint256) -> uint256:
     return STATE_REJECTED
 
 @external
-def propose(_script: Bytes[65536]) -> uint256:
+def propose(_script: Bytes[2048]) -> uint256:
     """
     @notice Create a proposal
     @param _script Script to be executed if the proposal passes
@@ -459,7 +459,7 @@ def _vote(_idx: uint256, _yea: uint256, _nay: uint256, _abstain: uint256):
     log Vote(msg.sender, _idx, yea, nay, abstain)
 
 @external
-def enact(_idx: uint256, _script: Bytes[65536]):
+def enact(_idx: uint256, _script: Bytes[2048]):
     """
     @notice Enact a proposal after its vote has passed
     @param _idx Proposal index
