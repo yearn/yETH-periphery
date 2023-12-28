@@ -12,6 +12,7 @@ REDISTRIBUTE = UNIT//10
 def main():
     total, votes = read_multiple_choice('votes/4-weight.csv', CHOICES)
     redistribute(total, votes)
+    refund_incentives()
 
 def redistribute(total, votes):
     assert sum(PREV_WEIGHTS) == 10000
@@ -41,3 +42,11 @@ def redistribute(total, votes):
         delta = w - PREV_WEIGHTS[i]
         sign = '+' if delta > 0 else ''
         print(f'{ASSET_NAMES[i].rjust(7)}: {w/100:.2f}% ({sign}{delta/100:.2f}%)')
+
+def refund_incentives():
+    id = '0x0401000000000000000000000000000000000000000000000000000000000000'
+    account = '0xEA26e7fC8ABE2D8Bd3A84ED207Ad9E0560E29901'
+    incentive = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
+    amt = 5000000000 + 2500000000
+    tree, root = build_tree([[account, incentive, amt]])
+    print(f'root: {root.hex()}')
