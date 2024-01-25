@@ -14,7 +14,8 @@ def main():
         # project.TranchessRateProvider,
         project.MetaPoolRateProvider,
         project.RocketPoolRateProvider,
-        project.MevProtocolRateProvider
+        project.MevProtocolRateProvider,
+        project.PirexRateProvider,
     ]
 
     assets = [
@@ -29,6 +30,7 @@ def main():
         '0x48AFbBd342F64EF8a9Ab1C143719b63C2AD81710', # mpETH
         '0xae78736Cd615f374D3085123A210448E74Fc6393', # rETH
         '0x24Ae2dA0f361AA4BE46b48EB19C91e02c5e4f27E', # mevETH
+        '0x9Ba021B0a9b958B5E75cE9f6dff97C7eE52cb3E6' # apxETH
     ]
 
     measure = project.RateProviderMeasure.deploy(sender=deployer)
