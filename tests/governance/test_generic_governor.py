@@ -5,6 +5,7 @@ WEEK = 7 * 24 * 60 * 60
 VOTE_START = 3 * WEEK
 EPOCH_LENGTH = 4 * WEEK
 UNIT = 1_000_000_000_000_000_000
+CID = '0x0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF'
 
 STATE_ABSENT    = 0
 STATE_PROPOSED  = 1
@@ -49,7 +50,7 @@ def script(alice, proxy, executor, token):
 def test_propose(alice, governor, script):
     assert governor.propose_open()
     assert governor.proposal_state(0) == STATE_ABSENT
-    idx = governor.propose(script, sender=alice).return_value
+    idx = governor.propose(CID, script, sender=alice).return_value
     assert governor.num_proposals() == 1
     assert governor.proposal_state(idx) == STATE_PROPOSED
     assert governor.proposal(idx)['author'] == alice.address
@@ -57,10 +58,10 @@ def test_propose(alice, governor, script):
 def test_propose_min_weight(deployer, alice, measure, governor, script):
     governor.set_propose_min_weight(UNIT, sender=deployer)
     with ape.reverts():
-        governor.propose(script, sender=alice)
+        governor.propose(CID, script, sender=alice)
 
     measure.set_vote_weight(alice, 2 * UNIT, sender=alice)
-    idx = governor.propose(script, sender=alice).return_value
+    idx = governor.propose(CID, script, sender=alice).return_value
     assert governor.num_proposals() == 1
     assert governor.proposal_state(idx) == STATE_PROPOSED
     assert governor.proposal(idx)['author'] == alice.address
@@ -70,24 +71,24 @@ def test_propose_closed(chain, deployer, governor, script):
     chain.mine()
     assert not governor.propose_open()
     with ape.reverts():
-        governor.propose(script, sender=deployer)
+        governor.propose(CID, script, sender=deployer)
 
 def test_retract_proposal(alice, bob, governor, script):
-    idx = governor.propose(script, sender=alice).return_value
+    idx = governor.propose(CID, script, sender=alice).return_value
     with ape.reverts():
         governor.retract(idx, sender=bob)
     governor.retract(idx, sender=alice)
     assert governor.proposal_state(idx) == STATE_RETRACTED
 
 def test_retract_proposal_too_late(chain, alice, governor, script):
-    idx = governor.propose(script, sender=alice).return_value
+    idx = governor.propose(CID, script, sender=alice).return_value
     chain.pending_timestamp += VOTE_START
     with ape.reverts():
         governor.retract(idx, sender=alice)
     assert governor.proposal_state(idx) == STATE_PROPOSED
 
 def test_cancel_proposal(deployer, alice, governor, script):
-    idx = governor.propose(script, sender=alice).return_value
+    idx = governor.propose(CID, script, sender=alice).return_value
     with ape.reverts():
         governor.cancel(idx, sender=alice)
     governor.cancel(idx, sender=deployer)
@@ -96,7 +97,7 @@ def test_cancel_proposal(deployer, alice, governor, script):
 def test_vote_yea(chain, alice, bob, measure, governor, script):
     assert governor.propose_open()
     assert not governor.vote_open()
-    idx = governor.propose(script, sender=alice).return_value
+    idx = governor.propose(CID, script, sender=alice).return_value
     chain.pending_timestamp += VOTE_START
     chain.mine()
     assert governor.vote_open()
@@ -123,7 +124,7 @@ def test_vote_yea(chain, alice, bob, measure, governor, script):
 def test_vote_nay(chain, alice, bob, measure, governor, script):
     assert governor.propose_open()
     assert not governor.vote_open()
-    idx = governor.propose(script, sender=alice).return_value
+    idx = governor.propose(CID, script, sender=alice).return_value
     chain.pending_timestamp += VOTE_START
     chain.mine()
     assert governor.vote_open()
@@ -150,7 +151,7 @@ def test_vote_nay(chain, alice, bob, measure, governor, script):
 def test_vote_abstain(chain, alice, bob, measure, governor, script):
     assert governor.propose_open()
     assert not governor.vote_open()
-    idx = governor.propose(script, sender=alice).return_value
+    idx = governor.propose(CID, script, sender=alice).return_value
     chain.pending_timestamp += VOTE_START
     chain.mine()
     assert governor.vote_open()
@@ -178,7 +179,7 @@ def test_vote(chain, alice, bob, measure, governor, script):
     assert governor.propose_open()
     assert not governor.vote_open()
 
-    idx = governor.propose(script, sender=alice).return_value
+    idx = governor.propose(CID, script, sender=alice).return_value
     chain.pending_timestamp += VOTE_START
     chain.mine()
     assert governor.vote_open()
@@ -219,7 +220,7 @@ def test_vote_retracted(chain, alice, measure, governor, script):
     assert governor.propose_open()
     assert not governor.vote_open()
 
-    idx = governor.propose(script, sender=alice).return_value
+    idx = governor.propose(CID, script, sender=alice).return_value
     governor.retract(idx, sender=alice)
     chain.pending_timestamp += VOTE_START
     measure.set_vote_weight(alice, UNIT, sender=alice)
@@ -230,7 +231,7 @@ def test_vote_cancelled(chain, deployer, alice, measure, governor, script):
     assert governor.propose_open()
     assert not governor.vote_open()
 
-    idx = governor.propose(script, sender=alice).return_value
+    idx = governor.propose(CID, script, sender=alice).return_value
     chain.pending_timestamp += VOTE_START
     measure.set_vote_weight(alice, UNIT, sender=alice)
     governor.cancel(idx, sender=deployer)
@@ -238,13 +239,13 @@ def test_vote_cancelled(chain, deployer, alice, measure, governor, script):
         governor.vote_yea(idx, sender=alice)
 
 def test_vote_closed_no_votes(chain, alice, governor, script):
-    idx = governor.propose(script, sender=alice).return_value
+    idx = governor.propose(CID, script, sender=alice).return_value
     chain.pending_timestamp += 4 * WEEK
     chain.mine()
     assert governor.proposal_state(idx) == STATE_REJECTED
 
 def test_vote_closed_no_counted_votes(chain, alice, measure, governor, script):
-    idx = governor.propose(script, sender=alice).return_value
+    idx = governor.propose(CID, script, sender=alice).return_value
     chain.pending_timestamp += VOTE_START
     measure.set_vote_weight(alice, UNIT, sender=alice)
     governor.vote_abstain(idx, sender=alice)
@@ -254,7 +255,7 @@ def test_vote_closed_no_counted_votes(chain, alice, measure, governor, script):
     assert governor.proposal_state(idx) == STATE_REJECTED
 
 def test_vote_closed_yea(chain, alice, bob, measure, governor, script):
-    idx = governor.propose(script, sender=alice).return_value
+    idx = governor.propose(CID, script, sender=alice).return_value
     chain.pending_timestamp += VOTE_START
     measure.set_vote_weight(alice, 2 * UNIT, sender=alice)
     governor.vote_yea(idx, sender=alice)
@@ -271,7 +272,7 @@ def test_vote_closed_yea(chain, alice, bob, measure, governor, script):
     assert governor.proposal_state(idx) == STATE_REJECTED
 
 def test_vote_closed_yea_abstain(chain, alice, bob, measure, governor, script):
-    idx = governor.propose(script, sender=alice).return_value
+    idx = governor.propose(CID, script, sender=alice).return_value
     chain.pending_timestamp += VOTE_START
     measure.set_vote_weight(alice, UNIT, sender=alice)
     governor.vote_yea(idx, sender=alice)
@@ -283,7 +284,7 @@ def test_vote_closed_yea_abstain(chain, alice, bob, measure, governor, script):
     assert governor.proposal_state(idx) == STATE_PASSED
 
 def test_vote_closed_nay(chain, alice, bob, measure, governor, script):
-    idx = governor.propose(script, sender=alice).return_value
+    idx = governor.propose(CID, script, sender=alice).return_value
     chain.pending_timestamp += VOTE_START
     measure.set_vote_weight(alice, 2 * UNIT, sender=alice)
     governor.vote_nay(idx, sender=alice)
@@ -295,7 +296,7 @@ def test_vote_closed_nay(chain, alice, bob, measure, governor, script):
     assert governor.proposal_state(idx) == STATE_REJECTED
 
 def test_vote_closed_nay_abstain(chain, alice, bob, measure, governor, script):
-    idx = governor.propose(script, sender=alice).return_value
+    idx = governor.propose(CID, script, sender=alice).return_value
     chain.pending_timestamp += VOTE_START
     measure.set_vote_weight(alice, UNIT, sender=alice)
     governor.vote_nay(idx, sender=alice)
@@ -316,7 +317,7 @@ def test_vote_closed_supermajority_yea(chain, deployer, alice, measure, governor
     governor.set_majority(6666, sender=deployer)
     assert governor.previous_majority() == 5000
 
-    idx = governor.propose(script, sender=alice).return_value
+    idx = governor.propose(CID, script, sender=alice).return_value
     chain.pending_timestamp += VOTE_START
     measure.set_vote_weight(alice, UNIT, sender=alice)
     governor.vote(idx, 7000, 3000, 0, sender=alice)
@@ -327,7 +328,7 @@ def test_vote_closed_supermajority_yea(chain, deployer, alice, measure, governor
 
 def test_vote_closed_supermajority_nay(chain, deployer, alice, measure, governor, script):
     governor.set_majority(6666, sender=deployer)
-    idx = governor.propose(script, sender=alice).return_value
+    idx = governor.propose(CID, script, sender=alice).return_value
     chain.pending_timestamp += VOTE_START
     measure.set_vote_weight(alice, UNIT, sender=alice)
     governor.vote(idx, 6000, 4000, 0, sender=alice)
@@ -342,7 +343,7 @@ def test_vote_closed_quorum(chain, deployer, alice, measure, governor, script):
     governor.set_quorum(UNIT, sender=deployer)
     assert governor.previous_quorum() == 0
 
-    idx = governor.propose(script, sender=alice).return_value
+    idx = governor.propose(CID, script, sender=alice).return_value
     chain.pending_timestamp += VOTE_START
     measure.set_vote_weight(alice, 2 * UNIT, sender=alice)
     governor.vote_yea(idx, sender=alice)
@@ -353,7 +354,7 @@ def test_vote_closed_quorum(chain, deployer, alice, measure, governor, script):
 
 def test_vote_closed_quorum_abstain(chain, deployer, alice, bob, measure, governor, script):
     governor.set_quorum(2 * UNIT, sender=deployer)
-    idx = governor.propose(script, sender=alice).return_value
+    idx = governor.propose(CID, script, sender=alice).return_value
     chain.pending_timestamp += VOTE_START
     measure.set_vote_weight(alice, UNIT, sender=alice)
     measure.set_vote_weight(bob, UNIT, sender=bob)
@@ -366,7 +367,7 @@ def test_vote_closed_quorum_abstain(chain, deployer, alice, bob, measure, govern
 
 def test_vote_closed_no_quorum(chain, deployer, alice, measure, governor, script):
     governor.set_quorum(2 * UNIT, sender=deployer)
-    idx = governor.propose(script, sender=alice).return_value
+    idx = governor.propose(CID, script, sender=alice).return_value
     chain.pending_timestamp += VOTE_START
     measure.set_vote_weight(alice, UNIT, sender=alice)
     governor.vote_yea(idx, sender=alice)
@@ -376,7 +377,7 @@ def test_vote_closed_no_quorum(chain, deployer, alice, measure, governor, script
     assert governor.proposal_state(idx) == STATE_REJECTED
 
 def test_execute(chain, alice, bob, measure, token, governor, script):
-    idx = governor.propose(script, sender=alice).return_value
+    idx = governor.propose(CID, script, sender=alice).return_value
     chain.pending_timestamp += VOTE_START
     measure.set_vote_weight(alice, UNIT, sender=alice)
     governor.vote_yea(idx, sender=alice)
@@ -397,7 +398,7 @@ def test_execute(chain, alice, bob, measure, token, governor, script):
         governor.enact(idx, script, sender=bob)
 
 def test_execute_different(chain, alice, bob, measure, proxy, executor, token, governor, script):
-    idx = governor.propose(script, sender=alice).return_value
+    idx = governor.propose(CID, script, sender=alice).return_value
     chain.pending_timestamp += VOTE_START
     measure.set_vote_weight(alice, UNIT, sender=alice)
     governor.vote_yea(idx, sender=alice)
@@ -417,7 +418,7 @@ def test_execute_delay(chain, deployer, alice, bob, measure, token, governor, sc
     governor.set_delay(3600, sender=deployer)
     assert governor.previous_delay() == 0
 
-    idx = governor.propose(script, sender=alice).return_value
+    idx = governor.propose(CID, script, sender=alice).return_value
     chain.pending_timestamp += VOTE_START
     measure.set_vote_weight(alice, UNIT, sender=alice)
     governor.vote_yea(idx, sender=alice)
@@ -434,7 +435,7 @@ def test_execute_delay(chain, deployer, alice, bob, measure, token, governor, sc
     assert governor.proposal_state(idx) == STATE_ENACTED
 
 def test_execute_cancelled(chain, deployer, alice, bob, measure, governor, script):
-    idx = governor.propose(script, sender=alice).return_value
+    idx = governor.propose(CID, script, sender=alice).return_value
     chain.pending_timestamp += VOTE_START
     measure.set_vote_weight(alice, UNIT, sender=alice)
     governor.vote_yea(idx, sender=alice)
@@ -446,7 +447,7 @@ def test_execute_cancelled(chain, deployer, alice, bob, measure, governor, scrip
         governor.enact(idx, script, sender=bob)
 
 def test_execute_too_late(chain, alice, bob, measure, governor, script):
-    idx = governor.propose(script, sender=alice).return_value
+    idx = governor.propose(CID, script, sender=alice).return_value
     chain.pending_timestamp += VOTE_START
     measure.set_vote_weight(alice, UNIT, sender=alice)
     governor.vote_yea(idx, sender=alice)
@@ -470,10 +471,10 @@ def test_management_proxy(chain, deployer, alice, bob, measure, proxy, executor,
     accept2 = executor.script(governor, governor.accept_management.encode_input())
     delay = executor.script(governor, governor.set_delay.encode_input(3600))
     
-    idx_accept1 = governor.propose(accept1, sender=alice).return_value
-    idx_set_governor = governor.propose(set_governor, sender=alice).return_value
-    idx_accept2 = governor.propose(accept2, sender=alice).return_value
-    idx_delay = governor.propose(delay, sender=alice).return_value
+    idx_accept1 = governor.propose(CID, accept1, sender=alice).return_value
+    idx_set_governor = governor.propose(CID, set_governor, sender=alice).return_value
+    idx_accept2 = governor.propose(CID, accept2, sender=alice).return_value
+    idx_delay = governor.propose(CID, delay, sender=alice).return_value
 
     chain.pending_timestamp += VOTE_START
     measure.set_vote_weight(alice, UNIT, sender=alice)
@@ -515,9 +516,9 @@ def test_ordering(chain, deployer, alice, measure, token, proxy, executor, gover
     data = governor.accept_management.encode_input()
     executor.execute_single(governor, data, sender=deployer)
 
-    idx1 = governor.propose(script, sender=alice).return_value
+    idx1 = governor.propose(CID, script, sender=alice).return_value
     script2 = executor.script(governor, governor.set_majority.encode_input(8000))
-    idx2 = governor.propose(script2, sender=alice).return_value
+    idx2 = governor.propose(CID, script2, sender=alice).return_value
 
     chain.pending_timestamp += VOTE_START
     measure.set_vote_weight(alice, UNIT, sender=alice)

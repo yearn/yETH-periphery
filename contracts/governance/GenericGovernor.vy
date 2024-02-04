@@ -24,6 +24,7 @@ interface Executor:
 struct Proposal:
     epoch: uint256
     author: address
+    ipfs: bytes32
     state: uint256
     hash: bytes32
     yea: uint256
@@ -50,6 +51,7 @@ event Propose:
     idx: indexed(uint256)
     epoch: indexed(uint256)
     author: indexed(address)
+    ipfs: bytes32
     script: Bytes[2048]
 
 event Retract:
@@ -352,9 +354,10 @@ def _proposal_state(_idx: uint256) -> uint256:
     return STATE_REJECTED
 
 @external
-def propose(_script: Bytes[2048]) -> uint256:
+def propose(_ipfs: bytes32, _script: Bytes[2048]) -> uint256:
     """
     @notice Create a proposal
+    @param _ipfs IPFS CID containing a description of the proposal
     @param _script Script to be executed if the proposal passes
     @return The proposal index
     """
@@ -366,9 +369,10 @@ def propose(_script: Bytes[2048]) -> uint256:
     self.num_proposals = idx + 1
     self.proposals[idx].epoch = epoch
     self.proposals[idx].author = msg.sender
+    self.proposals[idx].ipfs = _ipfs
     self.proposals[idx].state = STATE_PROPOSED
     self.proposals[idx].hash = keccak256(_script)
-    log Propose(idx, epoch, msg.sender, _script)
+    log Propose(idx, epoch, msg.sender, _ipfs, _script)
     return idx
 
 @external
