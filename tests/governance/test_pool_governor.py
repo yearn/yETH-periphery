@@ -46,6 +46,7 @@ def pool(networks, accounts, deployer, proxy, executor):
     # modify deployed pool slots to 2 assets with 50% weight
     pool = ape.Contract(POOL)
     management = accounts[pool.management()]
+    accounts[0].transfer(management, UNIT)
     pool.stop_ramp(sender=management)
     networks.provider.set_storage(pool.address, 1, int(10**18).to_bytes(32))
     networks.provider.set_storage(pool.address, 4, int(2).to_bytes(32))
@@ -107,6 +108,44 @@ def test_weight_redistribute_full_blank(chain, deployer, alice, measure, pool, i
     governor.execute(0, UNIT//100, 0, 450 * UNIT, 0, sender=deployer)
     assert pool.weight(0)[1] == UNIT // 2
     assert pool.weight(1)[1] == UNIT // 2
+
+def test_weight_redistribute_min(chain, deployer, alice, measure, pool, ivoting, wvoting, governor):
+    governor.set_redistribute_weight(UNIT * 98 // 100, sender=deployer)
+    chain.pending_timestamp += VOTE_START
+    measure.set_vote_weight(alice, UNIT, sender=alice)
+    wvoting.vote([0, 10000, 0], sender=alice)
+    chain.pending_timestamp += WEEK
+    ivoting.finalize_epoch(sender=alice)
+
+    with chain.isolate():
+        # no clamp
+        governor.execute(0, UNIT // 100, 0, 450 * UNIT, 0, sender=deployer)
+        assert pool.weight(0)[1] == UNIT * 99 // 100
+        assert pool.weight(1)[1] == UNIT // 100
+
+    governor.set_weight_clamp(UNIT // 10, UNIT, sender=deployer)
+    governor.execute(0, UNIT // 100, 0, 450 * UNIT, 0, sender=deployer)
+    assert pool.weight(0)[1] == UNIT * 9 // 10
+    assert pool.weight(1)[1] == UNIT // 10
+
+def test_weight_redistribute_max(chain, deployer, alice, measure, pool, ivoting, wvoting, governor):
+    governor.set_redistribute_weight(UNIT * 4 // 10, sender=deployer)
+    chain.pending_timestamp += VOTE_START
+    measure.set_vote_weight(alice, UNIT, sender=alice)
+    wvoting.vote([0, 2500, 7500], sender=alice)
+    chain.pending_timestamp += WEEK
+    ivoting.finalize_epoch(sender=alice)
+
+    with chain.isolate():
+        # no clamp
+        governor.execute(0, UNIT // 100, 0, 450 * UNIT, 0, sender=deployer)
+        assert pool.weight(0)[1] == UNIT * 4 // 10
+        assert pool.weight(1)[1] == UNIT * 6 // 10
+
+    governor.set_weight_clamp(0, UNIT * 55 // 100, sender=deployer)
+    governor.execute(0, UNIT//100, 0, 450 * UNIT, 0, sender=deployer)
+    assert pool.weight(0)[1] == UNIT * 45 // 100
+    assert pool.weight(1)[1] == UNIT * 55 // 100
 
 def test_inclusion(chain, deployer, alice, proxy, measure, candidate, provider, pool, ivoting, governor):
     provider.set_rate(candidate, UNIT, sender=deployer)

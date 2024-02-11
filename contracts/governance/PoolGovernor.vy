@@ -44,6 +44,8 @@ operator: public(address)
 initial_weight: public(uint256)
 ramp_weight: public(uint256)
 redistribute_weight: public(uint256)
+min_weight: public(uint256)
+max_weight: public(uint256)
 target_amplification: public(uint256)
 ramp_duration: public(uint256)
 inclusion_vote: public(address)
@@ -99,6 +101,7 @@ def __init__(_genesis: uint256, _pool: address, _executor: address):
     self.initial_weight = PRECISION / 10_000
     self.ramp_weight = PRECISION / 100
     self.redistribute_weight = PRECISION / 10
+    self.max_weight = PRECISION
     self.target_amplification = Pool(pool).amplification()
     self.ramp_duration = 7 * 24 * 60 * 60
 
@@ -161,16 +164,48 @@ def execute(_lower: uint256, _upper: uint256, _amount: uint256, _amplification: 
     left = PRECISION - left
 
     # calculate new weights
-    weights: DynArray[uint256, 32] = []
     total_weight: uint256 = 0
+    shortage: uint256 = 0
+    excess: uint256 = 0
+    min_weight: uint256 = self.min_weight
+    max_weight: uint256 = self.max_weight
+    weights: DynArray[uint256, 32] = []
     for i in range(32):
         if i == num_assets:
             break
         weight: uint256 = Pool(pool).weight(i) * left / PRECISION
         if total_votes > 0:
             weight += redistribute * v.votes(epoch, i + 1) / total_votes
+
+        # clamp
+        if weight < min_weight:
+            shortage += min_weight - weight
+            weight = min_weight
+        elif weight > max_weight:
+            excess += weight - max_weight
+            weight = max_weight
+        else:
+            total_weight += weight
+
         weights.append(weight)
-        total_weight += weight
+
+    # distribute excess/shortage from clamp
+    if shortage > 0 or excess > 0:
+        # edge case: all assets are clamped, there is no other asset to distribute to
+        assert total_weight > 0
+    
+        unclamped: uint256 = total_weight
+        net: uint256 = total_weight + excess - shortage
+        total_weight = 0
+        for i in range(32):
+            if i == num_assets:
+                break
+            weight: uint256 = weights[i]
+            if weight > min_weight and weight < max_weight:
+                # weight = weight + excess * weight / unclamped - shortage * weight / unclamped
+                weight = net * weight / unclamped
+                weights[i] = weight
+            total_weight += weight
 
     if included:
         weights.append(self.ramp_weight)
@@ -247,6 +282,7 @@ def set_initial_weight(_weight: uint256):
     @param _weight Initial weight (18 decimals)
     """
     assert msg.sender == self.management
+    assert _weight <= PRECISION / 100
     self.initial_weight = _weight
     log SetValue(1, _weight)
 
@@ -257,6 +293,7 @@ def set_ramp_weight(_weight: uint256):
     @param _weight Ramp target weight (18 decimals)
     """
     assert msg.sender == self.management
+    assert _weight <= PRECISION / 50
     self.ramp_weight = _weight
     log SetValue(2, _weight)
 
@@ -267,8 +304,25 @@ def set_redistribute_weight(_weight: uint256):
     @param _weight Redistribute weight (18 decimals)
     """
     assert msg.sender == self.management
+    assert _weight <= PRECISION
     self.redistribute_weight = _weight
     log SetValue(3, _weight)
+
+@external
+def set_weight_clamp(_min: uint256, _max: uint256):
+    """
+    @notice Set the minimum and maximum weight of each asset in the pool
+    @param _min Minimum weight (18 decimals)
+    @param _max Maximum weight (18 decimals)
+    @dev These values should be picked carefully as it could result in 
+        weight updates that cant be executed
+    """
+    assert msg.sender == self.management
+    assert _min <= PRECISION / 10 and _max >= PRECISION / 5
+    self.min_weight = _min
+    self.max_weight = _max
+    log SetValue(4, _min)
+    log SetValue(5, _max)
 
 @external
 def set_ramp_duration(_duration: uint256):
@@ -278,7 +332,7 @@ def set_ramp_duration(_duration: uint256):
     """
     assert msg.sender == self.management
     self.ramp_duration = _duration
-    log SetValue(4, _duration)
+    log SetValue(6, _duration)
 
 @external
 def set_inclusion_vote(_inclusion: address):
@@ -291,7 +345,7 @@ def set_inclusion_vote(_inclusion: address):
     assert msg.sender == self.management
     assert _inclusion != empty(address)
     self.inclusion_vote = _inclusion
-    log SetValue(5, convert(_inclusion, uint256))
+    log SetValue(7, convert(_inclusion, uint256))
 
 @external
 def set_weight_vote(_weight: address):
@@ -304,7 +358,7 @@ def set_weight_vote(_weight: address):
     assert msg.sender == self.management
     assert _weight != empty(address)
     self.weight_vote = _weight
-    log SetValue(6, convert(_weight, uint256))
+    log SetValue(8, convert(_weight, uint256))
 
 @external
 def set_management(_management: address):
