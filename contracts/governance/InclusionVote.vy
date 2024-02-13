@@ -205,10 +205,10 @@ def apply(_token: address):
     @param _token Token address to apply for
     """
     epoch: uint256 = self._epoch()
-    assert self.latest_finalized_epoch == epoch - 1
-    assert not self._vote_open()
-    
     enabled: bool = self.enabled
+    assert self.latest_finalized_epoch == epoch - 1
+    assert not self._vote_open() or not enabled
+    
     if enabled:
         assert self.num_candidates[epoch] < 32
     else:
@@ -402,6 +402,7 @@ def enable():
     @notice Enable the inclusion vote procedure
     """
     assert msg.sender == self.management
+    assert not self._vote_open()
     self.enabled = True
     log Enable(True)
 

@@ -250,3 +250,44 @@ def test_transfer_management(deployer, alice, bob, voting):
     voting.accept_management(sender=alice)
     assert voting.management() == alice.address
     assert voting.pending_management() == ZERO_ADDRESS
+
+def test_inclusion_round(chain, project, deployer, voting):
+    proxy = project.OwnershipProxy.deploy(sender=deployer)
+    executor = project.Executor.deploy(proxy, sender=deployer)
+    data = proxy.set_management.encode_input(executor)
+    proxy.execute(proxy, data, sender=deployer)
+
+    round = project.InclusionRound.deploy(voting.genesis(), executor, voting, sender=deployer)
+    round.set_vote_epoch(2, sender=deployer)
+    executor.set_governor(round, True, sender=deployer)
+
+    voting.set_management(proxy, sender=deployer)
+    data = voting.accept_management.encode_input()
+    executor.execute_single(voting, data, sender=deployer)
+
+    # toggling outside of epoch disables vote
+    assert voting.enabled()
+    round.toggle(sender=deployer)
+    assert not voting.enabled()
+
+    # toggling again in same epoch doesnt do anything
+    round.toggle(sender=deployer)
+    assert not voting.enabled()
+
+    # during vote epoch, toggling enables it
+    chain.pending_timestamp += EPOCH_LENGTH
+    round.toggle(sender=deployer)
+    assert voting.enabled()
+
+    # toggling again in same epoch doesnt do anything
+    round.toggle(sender=deployer)
+    assert voting.enabled()
+
+    # after vote epoch, toggling disables it
+    chain.pending_timestamp += EPOCH_LENGTH
+    round.toggle(sender=deployer)
+    assert not voting.enabled()
+
+    # toggling again doesnt do anything
+    round.toggle(sender=deployer)
+    assert not voting.enabled()

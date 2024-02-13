@@ -25,6 +25,15 @@ management: public(address)
 pending_management: public(address)
 vote_epoch: public(uint256)
 
+event SetVoteEpoch:
+    epoch: uint256
+
+event PendingManagement:
+    management: indexed(address)
+
+event SetManagement:
+    management: indexed(address)
+
 EPOCH_LENGTH: constant(uint256) = 4 * 7 * 24 * 60 * 60
 
 @external
@@ -82,3 +91,28 @@ def set_vote_epoch(_epoch: uint256):
     assert msg.sender == self.management
     assert _epoch >= self._epoch()
     self.vote_epoch = _epoch
+    log SetVoteEpoch(_epoch)
+
+@external
+def set_management(_management: address):
+    """
+    @notice 
+        Set the pending management address.
+        Needs to be accepted by that account separately to transfer management over
+    @param _management New pending management address
+    """
+    assert msg.sender == self.management
+    self.pending_management = _management
+    log PendingManagement(_management)
+
+@external
+def accept_management():
+    """
+    @notice 
+        Accept management role.
+        Can only be called by account previously marked as pending management by current management
+    """
+    assert msg.sender == self.pending_management
+    self.pending_management = empty(address)
+    self.management = msg.sender
+    log SetManagement(msg.sender)
