@@ -54,10 +54,10 @@ def pool(networks, accounts, deployer, proxy, executor):
     mask = ((1 << 256) - 1) ^ (((1 << 40) - 1) << 176)
     weights = (500000 << 176) + (500000 << 196)
 
-    packed_vb = int.from_bytes(networks.provider.get_storage_at(pool.address, 69))
+    packed_vb = int.from_bytes(networks.provider.get_storage(pool.address, 69))
     networks.provider.set_storage(pool.address, 69, (packed_vb & mask) | weights)
 
-    packed_vb = int.from_bytes(networks.provider.get_storage_at(pool.address, 70))
+    packed_vb = int.from_bytes(networks.provider.get_storage(pool.address, 70))
     networks.provider.set_storage(pool.address, 70, (packed_vb & mask) | weights)
     
     pool.set_management(proxy, sender=management)

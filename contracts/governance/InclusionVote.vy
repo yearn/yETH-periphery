@@ -175,7 +175,22 @@ def has_applied(_token: address) -> bool:
     @param _token Token address to query for
     @return True: token has applied this epoch, False: token has not applied this epoch
     """
+    if not self.enabled:
+        return self.applications[_token] == max_value(uint256)
     return self.applications[_token] == self._epoch()
+
+@external
+@view
+def application_fee(_token: address) -> uint256:
+    """
+    @notice Get the application fee for a specific token
+    @param _token Token address to get fee for
+    @return Application fee
+    """
+    assert self.rate_providers[_token] != APPLICATION_DISABLED
+    if self.applications[_token] == 0:
+        return self.initial_fee
+    return self.subsequent_fee
 
 @external
 def apply(_token: address):
@@ -191,9 +206,13 @@ def apply(_token: address):
     """
     epoch: uint256 = self._epoch()
     assert self.latest_finalized_epoch == epoch - 1
-    assert self.num_candidates[epoch] < 32
     assert not self._vote_open()
-    assert self.enabled
+    
+    enabled: bool = self.enabled
+    if enabled:
+        assert self.num_candidates[epoch] < 32
+    else:
+        epoch = max_value(uint256)
 
     application_epoch: uint256 = self.applications[_token]
     assert epoch > application_epoch, "already applied"
@@ -201,7 +220,7 @@ def apply(_token: address):
 
     provider: address = self.rate_providers[_token]
     assert provider != APPLICATION_DISABLED
-    if provider != empty(address):
+    if provider != empty(address) and enabled:
         self._whitelist(epoch, _token)
 
     fee: uint256 = 0
@@ -212,6 +231,23 @@ def apply(_token: address):
     if fee > 0:
         assert ERC20(self.fee_token).transferFrom(msg.sender, self, fee, default_return_value=True)
     log Apply(epoch, _token, msg.sender)
+
+@external
+def whitelist(_tokens: DynArray[address, 32]):
+    """
+    @notice Whitelist tokens that applied while the contract was disabled
+    @param _tokens Array of tokens to whitelist
+    @dev Can be called by anyone
+    """
+    epoch: uint256 = self._epoch()
+    assert self.enabled
+    assert not self._vote_open()
+    for token in _tokens:
+        assert self.num_candidates[epoch] < 32
+        assert self.applications[token] == max_value(uint256)
+        assert self.rate_providers[token] not in [empty(address), APPLICATION_DISABLED]
+        self.applications[token] = epoch
+        self._whitelist(epoch, token)
 
 @internal
 def _whitelist(_epoch: uint256, _token: address):
