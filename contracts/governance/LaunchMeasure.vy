@@ -1,4 +1,4 @@
-# @version 0.3.7
+# @version 0.3.10
 """
 @title Launch vote weight measure
 @author 0xkorin, Yearn Finance

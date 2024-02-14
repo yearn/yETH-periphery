@@ -1,4 +1,4 @@
-# @version 0.3.7
+# @version 0.3.10
 """
 @title Vote weight measure with delegation
 @author 0xkorin, Yearn Finance

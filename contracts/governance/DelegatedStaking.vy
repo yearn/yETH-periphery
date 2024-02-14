@@ -1,4 +1,4 @@
-# @version 0.3.7
+# @version 0.3.10
 """
 @title yETH delegated staking contract
 @author 0xkorin, Yearn Finance

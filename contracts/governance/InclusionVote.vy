@@ -1,4 +1,4 @@
-# @version 0.3.7
+# @version 0.3.10
 """
 @title Inclusion vote
 @author 0xkorin, Yearn Finance
@@ -414,6 +414,7 @@ def disable():
         No new applications are accepted and no-one is allowed to vote
     """
     assert msg.sender == self.management
+    assert not self._vote_open()
     self.enabled = False
     log Enable(False)
 
