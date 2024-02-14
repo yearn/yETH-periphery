@@ -5,6 +5,7 @@ WEEK = 7 * 24 * 60 * 60
 VOTE_START = 3 * WEEK
 EPOCH_LENGTH = 4 * WEEK
 UNIT = 1_000_000_000_000_000_000
+MAX = 2**256 - 1
 ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
 RATE_PROVIDER = '0x1234123412341234123412341234123412341234'
 RATE_PROVIDER2 = '0x5678567856785678567856785678567856785678'
@@ -65,6 +66,33 @@ def test_apply_subsequent_fee(chain, deployer, alice, bob, fee_token, token, vot
     fee_token.approve(voting, UNIT, sender=bob)
     voting.apply(token, sender=bob)
     assert fee_token.balanceOf(voting) == 3 * UNIT
+
+def test_apply_disabled(deployer, alice, token, voting):
+    voting.disable(sender=deployer)
+    assert voting.applications(token) == 0
+    voting.apply(token, sender=alice)
+    assert voting.applications(token) == MAX
+    assert voting.has_applied(token)
+
+    # cant apply more than once
+    with ape.reverts():
+        voting.apply(token, sender=alice)
+
+    # setting rate provider doesnt whitelist the token
+    voting.set_rate_provider(token, RATE_PROVIDER, sender=deployer)
+    assert voting.candidates_map(1, token) == 0
+
+    # cant whitelist token when contract is not enabled
+    with ape.reverts():
+        voting.whitelist([token], sender=deployer)
+
+    voting.enable(sender=deployer)
+    voting.whitelist([token], sender=deployer)
+    assert voting.candidates_map(1, token) == 1
+
+    # cant whitelist more than once
+    with ape.reverts():
+        voting.whitelist([token], sender=deployer)
 
 def test_sweep_fee(deployer, alice, bob, fee_token, token, voting):
     voting.set_application_fees(2 * UNIT, UNIT, sender=deployer)
