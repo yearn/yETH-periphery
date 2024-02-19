@@ -28,7 +28,9 @@ def incentive_token(project, deployer):
 
 @pytest.fixture
 def voting(chain, project, deployer, measure):
-    return project.InclusionVote.deploy(chain.pending_timestamp - EPOCH_LENGTH, measure, ZERO_ADDRESS, sender=deployer)
+    voting = project.InclusionVote.deploy(chain.pending_timestamp - EPOCH_LENGTH, measure, ZERO_ADDRESS, sender=deployer)
+    voting.set_enable_epoch(1, sender=deployer)
+    return voting
 
 @pytest.fixture
 def incentives(project, deployer, voting):
@@ -68,7 +70,7 @@ def test_claim(chain, deployer, alice, bob, measure, token, incentive_token, vot
     voting.vote([10000, 0], sender=alice)
     voting.vote([0, 10000], sender=bob)
     chain.pending_timestamp += WEEK
-    voting.finalize_epoch(sender=alice)
+    voting.finalize_epochs(sender=alice)
     assert voting.winners(epoch) == token.address
 
     # everyone that voted will be eligible for incentives
@@ -100,7 +102,7 @@ def test_claim_fee(chain, deployer, alice, measure, token, incentive_token, voti
     chain.pending_timestamp += VOTE_START
     voting.vote([0, 10000], sender=alice)
     chain.pending_timestamp += WEEK
-    voting.finalize_epoch(sender=alice)
+    voting.finalize_epochs(sender=alice)
 
     assert incentives.claimable(epoch, incentive_token, alice) == 9 * UNIT
     incentives.claim(epoch, incentive_token, sender=alice)
@@ -126,7 +128,7 @@ def test_refund(chain, deployer, alice, bob, measure, token, incentive_token, vo
     chain.pending_timestamp += VOTE_START
     voting.vote([10000], sender=alice)
     chain.pending_timestamp += WEEK
-    voting.finalize_epoch(sender=alice)
+    voting.finalize_epochs(sender=alice)
     assert voting.winners(epoch) == ZERO_ADDRESS
 
     # incentives of loser cant be claimed
@@ -154,7 +156,7 @@ def test_sweep(chain, deployer, alice, bob, charlie, measure, token, incentive_t
     voting.vote([10000, 0], sender=alice)
     voting.vote([0, 10000], sender=bob)
     chain.pending_timestamp += WEEK
-    voting.finalize_epoch(sender=alice)
+    voting.finalize_epochs(sender=alice)
     incentives.claim(epoch, incentive_token, alice, sender=bob)
 
     # unclaimed incentives cannot be swept yet

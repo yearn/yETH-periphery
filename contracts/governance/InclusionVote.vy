@@ -5,7 +5,8 @@
 @license GNU AGPLv3
 @notice
     Voting contract for inclusion into the pool.
-    Time is divided in 4 week epochs. During the first three weeks, any user
+    Time is divided in 4 week epochs. Management configures an epoch in which an
+    inclusion vote is ran. Up until the last week of that epoch, any user
     can submit an application on behalf of a token. A fee is potentially charged
     as an anti spam measure.
 
@@ -29,7 +30,7 @@ pending_management: public(address)
 operator: public(address)
 treasury: public(address)
 measure: public(address)
-enabled: public(bool)
+enable_epoch: public(uint256)
 latest_finalized_epoch: public(uint256)
 num_candidates: public(HashMap[uint256, uint256]) # epoch => number of candidates
 candidates: public(HashMap[uint256, address[33]]) # epoch => [candidate]
@@ -71,8 +72,8 @@ event SetRateProvider:
     token: indexed(address)
     provider: address
 
-event Enable:
-    enabled: bool
+event SetEnableEpoch:
+    epoch: uint256
 
 event SetOperator:
     operator: indexed(address)
@@ -117,7 +118,6 @@ def __init__(_genesis: uint256, _measure: address, _fee_token: address):
     self.operator = msg.sender
     self.treasury = msg.sender
     self.measure = _measure
-    self.enabled = True
     self.fee_token = _fee_token
     
     epoch: uint256 = self._epoch()
@@ -165,19 +165,29 @@ def _vote_open() -> bool:
     """
     @notice Query whether the vote period is currently open
     """
-    return (block.timestamp - genesis) % EPOCH_LENGTH >= VOTE_START
+    return self._enabled() and (block.timestamp - genesis) % EPOCH_LENGTH >= VOTE_START
+
+@external
+@view
+def enabled() -> bool:
+    return self._enabled()
+
+@internal
+@view
+def _enabled() -> bool:
+    return self._epoch() == self.enable_epoch
 
 @external
 @view
 def has_applied(_token: address) -> bool:
     """
-    @notice Query whether a token has applied in the current epoch
+    @notice Query whether a token has applied for the next inclusion vote
     @param _token Token address to query for
-    @return True: token has applied this epoch, False: token has not applied this epoch
+    @return True: token has applied, False: token has not applied
     """
-    if not self.enabled:
-        return self.applications[_token] == max_value(uint256)
-    return self.applications[_token] == self._epoch()
+    application_epoch: uint256 = self.applications[_token]
+    return application_epoch == max_value(uint256) or \
+        (self._enabled() and application_epoch == self._epoch())        
 
 @external
 @view
@@ -196,7 +206,7 @@ def application_fee(_token: address) -> uint256:
 def apply(_token: address):
     """
     @notice
-        Apply for a token to be included into the pool. Each token can only apply once per epoch.
+        Apply for a token to be included into the pool. Each token can only apply once per voting round.
         Included assets can no longer apply to be included.
         Charges a fee, dependent on whether the application is the first one 
         or a follow up in a subsequent epoch.
@@ -205,9 +215,9 @@ def apply(_token: address):
     @param _token Token address to apply for
     """
     epoch: uint256 = self._epoch()
-    enabled: bool = self.enabled
+    enabled: bool = self._enabled()
     assert self.latest_finalized_epoch == epoch - 1
-    assert not self._vote_open() or not enabled
+    assert not self._vote_open()
     
     if enabled:
         assert self.num_candidates[epoch] < 32
@@ -235,12 +245,12 @@ def apply(_token: address):
 @external
 def whitelist(_tokens: DynArray[address, 32]):
     """
-    @notice Whitelist tokens that applied while the contract was disabled
+    @notice Whitelist tokens that applied outside of the voting epoch
     @param _tokens Array of tokens to whitelist
     @dev Can be called by anyone
     """
     epoch: uint256 = self._epoch()
-    assert self.enabled
+    assert self._enabled()
     assert not self._vote_open()
     for token in _tokens:
         assert self.num_candidates[epoch] < 32
@@ -272,7 +282,6 @@ def vote(_votes: DynArray[uint256, 33]):
     epoch: uint256 = self._epoch()
     assert self._vote_open()
     assert self.votes_user[msg.sender][epoch] == 0
-    assert self.enabled
 
     n: uint256 = self.num_candidates[epoch] + 1
     assert len(_votes) <= n
@@ -298,14 +307,21 @@ def vote(_votes: DynArray[uint256, 33]):
     log Vote(epoch, msg.sender, weight, _votes)
 
 @external
-def finalize_epoch():
+def finalize_epochs():
     """
-    @notice Finalize an epoch, if possible. Will determine the winner of the vote after epoch has ended
+    @notice Finalize epochs, if possible. Will determine the winner of the vote after epoch has ended
     """
-    epoch: uint256 = self.latest_finalized_epoch + 1
-    if epoch >= self._epoch():
+    epoch: uint256 = self._epoch() - 1
+    if self.latest_finalized_epoch == epoch:
         # nothing to finalize
         return
+    self.latest_finalized_epoch = epoch
+
+    enable: uint256 = self.enable_epoch
+    if epoch < enable or enable == 0:
+        # no epochs where voting has been enabled
+        return
+    epoch = enable
 
     # find candidate with most votes
     n: uint256 = self.num_candidates[epoch] + 1
@@ -327,7 +343,6 @@ def finalize_epoch():
     if winner != empty(address):
         self.winner_rate_providers[epoch] = self.rate_providers[winner]
         self.rate_providers[winner] = APPLICATION_DISABLED
-    self.latest_finalized_epoch = epoch
     log Finalize(epoch, winner)
 
 @external
@@ -397,26 +412,17 @@ def set_measure(_measure: address):
     log SetMeasure(_measure)
 
 @external
-def enable():
+def set_enable_epoch(_epoch: uint256):
     """
-    @notice Enable the inclusion vote procedure
+    @notice Enable the inclusion vote procedure for a specific epoch
     """
     assert msg.sender == self.management
     assert not self._vote_open()
-    self.enabled = True
-    log Enable(True)
+    assert _epoch >= self._epoch()
+    assert self.latest_finalized_epoch >= self.enable_epoch
 
-@external
-def disable():
-    """
-    @notice 
-        Disable the inclusion vote procedure.
-        No new applications are accepted and no-one is allowed to vote
-    """
-    assert msg.sender == self.management
-    assert not self._vote_open()
-    self.enabled = False
-    log Enable(False)
+    self.enable_epoch = _epoch
+    log SetEnableEpoch(_epoch)
 
 @external
 def set_application_fee_token(_token: address):

@@ -35,7 +35,9 @@ def fee_token(project, deployer):
 
 @pytest.fixture
 def ivoting(chain, project, deployer, measure, fee_token):
-    return project.InclusionVote.deploy(chain.pending_timestamp - EPOCH_LENGTH, measure, fee_token, sender=deployer)
+    ivoting = project.InclusionVote.deploy(chain.pending_timestamp - EPOCH_LENGTH, measure, fee_token, sender=deployer)
+    ivoting.set_enable_epoch(1, sender=deployer)
+    return ivoting
 
 @pytest.fixture
 def provider(project, deployer):
@@ -84,7 +86,7 @@ def test_weight_redistribute(chain, deployer, alice, measure, pool, ivoting, wvo
     measure.set_vote_weight(alice, UNIT, sender=alice)
     wvoting.vote([0, 2000, 8000], sender=alice)
     chain.pending_timestamp += WEEK
-    ivoting.finalize_epoch(sender=alice)
+    ivoting.finalize_epochs(sender=alice)
     governor.execute(0, UNIT//100, 0, 450 * UNIT, 0, sender=deployer)
     assert pool.weight(0)[1] == UNIT * 47 // 100
     assert pool.weight(1)[1] == UNIT * 53 // 100
@@ -94,7 +96,7 @@ def test_weight_redistribute_blank(chain, deployer, alice, measure, pool, ivotin
     measure.set_vote_weight(alice, UNIT, sender=alice)
     wvoting.vote([4000, 2000, 4000], sender=alice)
     chain.pending_timestamp += WEEK
-    ivoting.finalize_epoch(sender=alice)
+    ivoting.finalize_epochs(sender=alice)
     governor.execute(0, UNIT//100, 0, 450 * UNIT, 0, sender=deployer)
     assert pool.weight(0)[1] == UNIT * 49 // 100
     assert pool.weight(1)[1] == UNIT * 51 // 100
@@ -104,7 +106,7 @@ def test_weight_redistribute_full_blank(chain, deployer, alice, measure, pool, i
     measure.set_vote_weight(alice, UNIT, sender=alice)
     wvoting.vote([10000], sender=alice)
     chain.pending_timestamp += WEEK
-    ivoting.finalize_epoch(sender=alice)
+    ivoting.finalize_epochs(sender=alice)
     governor.execute(0, UNIT//100, 0, 450 * UNIT, 0, sender=deployer)
     assert pool.weight(0)[1] == UNIT // 2
     assert pool.weight(1)[1] == UNIT // 2
@@ -115,7 +117,7 @@ def test_weight_redistribute_min(chain, deployer, alice, measure, pool, ivoting,
     measure.set_vote_weight(alice, UNIT, sender=alice)
     wvoting.vote([0, 10000, 0], sender=alice)
     chain.pending_timestamp += WEEK
-    ivoting.finalize_epoch(sender=alice)
+    ivoting.finalize_epochs(sender=alice)
 
     with chain.isolate():
         # no clamp
@@ -134,7 +136,7 @@ def test_weight_redistribute_max(chain, deployer, alice, measure, pool, ivoting,
     measure.set_vote_weight(alice, UNIT, sender=alice)
     wvoting.vote([0, 2500, 7500], sender=alice)
     chain.pending_timestamp += WEEK
-    ivoting.finalize_epoch(sender=alice)
+    ivoting.finalize_epochs(sender=alice)
 
     with chain.isolate():
         # no clamp
@@ -156,7 +158,7 @@ def test_inclusion(chain, deployer, alice, proxy, measure, candidate, provider, 
     ivoting.vote([0, 10000], sender=alice)
     candidate.mint(proxy, UNIT, sender=alice)
     chain.pending_timestamp += WEEK
-    ivoting.finalize_epoch(sender=alice)
+    ivoting.finalize_epochs(sender=alice)
     
     n = pool.num_assets()
     lp_token = ape.Contract(pool.token())
@@ -188,7 +190,7 @@ def test_inclusion_redistribute(chain, deployer, alice, proxy, measure, candidat
     wvoting.vote([0, 0, 10000], sender=alice)
     candidate.mint(proxy, UNIT, sender=alice)
     chain.pending_timestamp += WEEK
-    ivoting.finalize_epoch(sender=alice)
+    ivoting.finalize_epochs(sender=alice)
     governor.execute(UNIT, UNIT, UNIT//100, 450 * UNIT, 0, sender=deployer)
 
     # current weights

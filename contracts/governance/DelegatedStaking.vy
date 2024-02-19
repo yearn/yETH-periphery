@@ -15,8 +15,8 @@ interface Measure:
     def vote_weight(_account: address) -> uint256: view
 implements: Measure
 
-last_supply: uint256
-last_balances: HashMap[address, uint256]
+last_supply: public(uint256)
+last_balances: public(HashMap[address, uint256])
 
 # ERC20 state
 totalSupply: public(uint256)

@@ -29,7 +29,9 @@ def fee_token(project, deployer):
 
 @pytest.fixture
 def voting(chain, project, deployer, measure, fee_token):
-    return project.InclusionVote.deploy(chain.pending_timestamp - EPOCH_LENGTH, measure, fee_token, sender=deployer)
+    voting = project.InclusionVote.deploy(chain.pending_timestamp - EPOCH_LENGTH, measure, fee_token, sender=deployer)
+    voting.set_enable_epoch(1, sender=deployer)
+    return voting
 
 def test_apply(alice, token, voting):
     assert not voting.has_applied(token)
@@ -58,8 +60,7 @@ def test_apply_subsequent_fee(chain, deployer, alice, bob, fee_token, token, vot
     fee_token.approve(voting, 2 * UNIT, sender=alice)
     voting.apply(token, sender=alice)
     chain.pending_timestamp += EPOCH_LENGTH
-    voting.finalize_epoch(sender=alice)
-    assert not voting.has_applied(token)
+    voting.finalize_epochs(sender=alice)
 
     # apply again next epoch
     fee_token.mint(bob, UNIT, sender=deployer)
@@ -67,8 +68,10 @@ def test_apply_subsequent_fee(chain, deployer, alice, bob, fee_token, token, vot
     voting.apply(token, sender=bob)
     assert fee_token.balanceOf(voting) == 3 * UNIT
 
-def test_apply_disabled(deployer, alice, token, voting):
-    voting.disable(sender=deployer)
+def test_apply_disabled(chain, deployer, alice, token, voting):
+    chain.pending_timestamp += EPOCH_LENGTH
+    voting.finalize_epochs(sender=alice)
+
     assert voting.applications(token) == 0
     voting.apply(token, sender=alice)
     assert voting.applications(token) == MAX
@@ -86,9 +89,9 @@ def test_apply_disabled(deployer, alice, token, voting):
     with ape.reverts():
         voting.whitelist([token], sender=deployer)
 
-    voting.enable(sender=deployer)
+    voting.set_enable_epoch(2, sender=deployer)
     voting.whitelist([token], sender=deployer)
-    assert voting.candidates_map(1, token) == 1
+    assert voting.candidates_map(2, token) == 1
 
     # cant whitelist more than once
     with ape.reverts():
@@ -211,12 +214,12 @@ def test_finalize(chain, deployer, alice, bob, measure, token, token2, voting):
     voting.vote([1000, 6000, 3000], sender=alice)
 
     # cant finalize before epoch is over
-    voting.finalize_epoch(sender=bob)
+    voting.finalize_epochs(sender=bob)
     assert voting.latest_finalized_epoch() == epoch - 1
 
     # finalize
     chain.pending_timestamp += WEEK
-    voting.finalize_epoch(sender=bob)
+    voting.finalize_epochs(sender=bob)
     assert voting.latest_finalized_epoch() == epoch
     assert voting.winners(epoch) == token.address
     assert voting.winner_rate_providers(epoch) == RATE_PROVIDER
@@ -234,7 +237,7 @@ def test_blank_winner(chain, deployer, alice, bob, measure, token, voting):
     chain.pending_timestamp += VOTE_START
     voting.vote([6000, 4000], sender=alice)
     chain.pending_timestamp += WEEK
-    voting.finalize_epoch(sender=bob)
+    voting.finalize_epochs(sender=bob)
     assert voting.latest_finalized_epoch() == epoch
     assert voting.winners(epoch) == ZERO_ADDRESS
     assert voting.winner_rate_providers(epoch) == ZERO_ADDRESS
@@ -260,7 +263,7 @@ def test_change_rate_provider(chain, deployer, alice, measure, token, voting):
     with ape.reverts():
         voting.set_rate_provider(token, RATE_PROVIDER2, sender=deployer)
 
-    voting.finalize_epoch(sender=deployer)
+    voting.finalize_epochs(sender=deployer)
     voting.set_rate_provider(token, RATE_PROVIDER2, sender=deployer)
 
 def test_transfer_management(deployer, alice, bob, voting):
@@ -278,44 +281,3 @@ def test_transfer_management(deployer, alice, bob, voting):
     voting.accept_management(sender=alice)
     assert voting.management() == alice.address
     assert voting.pending_management() == ZERO_ADDRESS
-
-def test_inclusion_round(chain, project, deployer, voting):
-    proxy = project.OwnershipProxy.deploy(sender=deployer)
-    executor = project.Executor.deploy(proxy, sender=deployer)
-    data = proxy.set_management.encode_input(executor)
-    proxy.execute(proxy, data, sender=deployer)
-
-    round = project.InclusionRound.deploy(voting.genesis(), executor, voting, sender=deployer)
-    round.set_vote_epoch(2, sender=deployer)
-    executor.set_governor(round, True, sender=deployer)
-
-    voting.set_management(proxy, sender=deployer)
-    data = voting.accept_management.encode_input()
-    executor.execute_single(voting, data, sender=deployer)
-
-    # toggling outside of epoch disables vote
-    assert voting.enabled()
-    round.toggle(sender=deployer)
-    assert not voting.enabled()
-
-    # toggling again in same epoch doesnt do anything
-    round.toggle(sender=deployer)
-    assert not voting.enabled()
-
-    # during vote epoch, toggling enables it
-    chain.pending_timestamp += EPOCH_LENGTH
-    round.toggle(sender=deployer)
-    assert voting.enabled()
-
-    # toggling again in same epoch doesnt do anything
-    round.toggle(sender=deployer)
-    assert voting.enabled()
-
-    # after vote epoch, toggling disables it
-    chain.pending_timestamp += EPOCH_LENGTH
-    round.toggle(sender=deployer)
-    assert not voting.enabled()
-
-    # toggling again doesnt do anything
-    round.toggle(sender=deployer)
-    assert not voting.enabled()
