@@ -31,7 +31,7 @@ operator: public(address)
 treasury: public(address)
 measure: public(address)
 enable_epoch: public(uint256)
-latest_finalized_epoch: public(uint256)
+finalized_epoch: uint256
 num_candidates: public(HashMap[uint256, uint256]) # epoch => number of candidates
 candidates: public(HashMap[uint256, address[33]]) # epoch => [candidate]
 candidates_map: public(HashMap[uint256, HashMap[address, uint256]]) # epoch => candidate => candidate idx
@@ -122,7 +122,7 @@ def __init__(_genesis: uint256, _measure: address, _fee_token: address):
     
     epoch: uint256 = self._epoch()
     assert epoch > 0
-    self.latest_finalized_epoch = epoch - 1
+    self.finalized_epoch = epoch - 1
 
 @external
 @view
@@ -215,8 +215,12 @@ def apply(_token: address):
     @param _token Token address to apply for
     """
     epoch: uint256 = self._epoch()
+    enable_epoch: uint256 = self.enable_epoch
+    if epoch > enable_epoch:
+        # if we're past the voting round, make sure it is finalized
+        assert self.finalized_epoch >= enable_epoch
+
     enabled: bool = self._enabled()
-    assert self.latest_finalized_epoch == epoch - 1
     assert not self._vote_open()
     
     if enabled:
@@ -307,15 +311,28 @@ def vote(_votes: DynArray[uint256, 33]):
     log Vote(epoch, msg.sender, weight, _votes)
 
 @external
+@view
+def latest_finalized_epoch() -> uint256:
+    """
+    @notice Get the latest finalized epoch
+    @return Latest finalized epoch
+    """
+    epoch: uint256 = self._epoch() - 1
+    enable_epoch: uint256 = self.enable_epoch
+    if epoch < enable_epoch or enable_epoch == 0:
+        return epoch
+    return max(self.finalized_epoch, enable_epoch - 1)
+
+@external
 def finalize_epochs():
     """
     @notice Finalize epochs, if possible. Will determine the winner of the vote after epoch has ended
     """
     epoch: uint256 = self._epoch() - 1
-    if self.latest_finalized_epoch == epoch:
+    if self.finalized_epoch == epoch:
         # nothing to finalize
         return
-    self.latest_finalized_epoch = epoch
+    self.finalized_epoch = epoch
 
     enable: uint256 = self.enable_epoch
     if epoch < enable or enable == 0:
@@ -356,7 +373,7 @@ def set_rate_provider(_token: address, _provider: address):
     """
     epoch: uint256 = self._epoch()
     assert msg.sender == self.operator
-    assert (not self._vote_open() and self.latest_finalized_epoch + 1 == epoch) or \
+    assert (not self._vote_open() and self.finalized_epoch + 1 == epoch) or \
         _provider == empty(address)
     self.rate_providers[_token] = _provider
     log SetRateProvider(_token, _provider)
@@ -419,7 +436,7 @@ def set_enable_epoch(_epoch: uint256):
     assert msg.sender == self.management
     assert not self._vote_open()
     assert _epoch >= self._epoch()
-    assert self.latest_finalized_epoch >= self.enable_epoch
+    assert self.finalized_epoch >= self.enable_epoch
 
     self.enable_epoch = _epoch
     log SetEnableEpoch(_epoch)
