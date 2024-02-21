@@ -217,6 +217,10 @@ def test_finalize(chain, deployer, alice, bob, measure, token, token2, voting):
     voting.finalize_epochs(sender=bob)
     assert voting.latest_finalized_epoch() == epoch - 1
 
+    # cant apply before finalizing
+    with ape.reverts():
+        voting.apply(token2, sender=alice)
+
     # finalize
     chain.pending_timestamp += WEEK
     voting.finalize_epochs(sender=bob)
@@ -228,6 +232,25 @@ def test_finalize(chain, deployer, alice, bob, measure, token, token2, voting):
     # winners cant apply anymore
     with ape.reverts():
         voting.apply(token, sender=alice)
+    
+    # can apply again if not a winner
+    voting.apply(token2, sender=alice)
+
+def test_auto_finalize(chain, deployer, alice, bob, measure, token, token2, voting):
+    epoch = voting.epoch()
+    voting.set_rate_provider(token, RATE_PROVIDER, sender=deployer)
+    voting.set_rate_provider(token2, RATE_PROVIDER2, sender=deployer)
+    voting.apply(token, sender=alice)
+    voting.apply(token2, sender=alice)
+    measure.set_vote_weight(alice, UNIT, sender=alice)
+    chain.pending_timestamp += VOTE_START
+    voting.vote([1000, 6000, 3000], sender=alice)
+
+    chain.pending_timestamp += 3 * EPOCH_LENGTH
+    chain.mine()
+    assert voting.latest_finalized_epoch() == epoch - 1
+    voting.finalize_epochs(sender=bob)
+    assert voting.latest_finalized_epoch() == epoch + 2
 
 def test_blank_winner(chain, deployer, alice, bob, measure, token, voting):
     epoch = voting.epoch()

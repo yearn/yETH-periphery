@@ -170,11 +170,18 @@ def _vote_open() -> bool:
 @external
 @view
 def enabled() -> bool:
+    """
+    @notice Query whether the inclusion voting is enabled this epoch
+    @return True: inclusion vote is enabled this epoch, False: inclusion vote is not enabled
+    """
     return self._enabled()
 
 @internal
 @view
 def _enabled() -> bool:
+    """
+    @notice Query whether the inclusion voting is enabled this epoch
+    """
     return self._epoch() == self.enable_epoch
 
 @external
