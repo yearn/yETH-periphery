@@ -1,6 +1,11 @@
 ## yETH-periphery
 
-### Governance
+### Components
+- yETH pool rate providers in `contracts/providers`
+- yETH POL in `contracts/pol`
+- yETH governance in `contracts/governance`
+
+### Governance spec
 Contracts for fully on-chain governance, consisting of multiple cooperating components. Each component can be swapped out in the future if our requirements change. The different concepts and contracts are as follows:
 - The entire protocol defines a set of management roles, which have powers within the protocol to set variables, rates, add assets etc. With the transition to on-chain governance, the **OwnershipProxy** will become the new owner of all these management roles, including the ones descriped below (excluding the proxy's own). This contract is very simple and is able to execute arbitary contract calls. Note that this is not a delegatecall proxy!
 - The proxy has its own management, which will be the **Executor** and has permission to execute calls through the proxy. The executor maintains a list of governors, which are allowed to execute function calls through executor onto the proxy. In addition, the executor has the ability to enable a whitelist of blacklist for combination of address+selector. This allows us to define governors with only limited power.
