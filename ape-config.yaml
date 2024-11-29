@@ -9,3 +9,8 @@ ethereum:
     default_provider: foundry
   mainnet_fork:
     default_provider: foundry
+    transaction_acceptance_timeout: 600
+vyper:
+  evm_version: cancun
+foundry:
+  evm_version: cancun

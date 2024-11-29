@@ -1,4 +1,4 @@
-# @version 0.3.7
+# @version 0.3.10
 
 interface RocketPoolBalances:
     def getTotalRETHSupply() -> uint256: view

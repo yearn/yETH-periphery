@@ -1,4 +1,4 @@
-# @version 0.3.7
+# @version 0.3.10
 
 interface EtherFiLiquidityPool:
     def amountForShare(_shares: uint256) -> uint256: view

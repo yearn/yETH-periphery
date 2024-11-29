@@ -1,4 +1,4 @@
-# @version 0.3.7
+# @version 0.3.10
 
 interface LidoToken:
     def getPooledEthByShares(_shares: uint256) -> uint256: view

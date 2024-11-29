@@ -1,4 +1,4 @@
-# @version 0.3.7
+# @version 0.3.10
 
 interface Pool:
     def num_assets() -> uint256: view

@@ -1,4 +1,4 @@
-# @version 0.3.7
+# @version 0.3.10
 
 interface SwellToken:
     def swETHToETHRate() -> uint256: view

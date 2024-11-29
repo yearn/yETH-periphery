@@ -1,4 +1,4 @@
-# @version 0.3.7
+# @version 0.3.10
 """
 @title Incentives for Snapshot votes
 @author 0xkorin, Yearn Finance

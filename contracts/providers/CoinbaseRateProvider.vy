@@ -1,4 +1,4 @@
-# @version 0.3.7
+# @version 0.3.10
 
 interface CoinbaseToken:
     def exchangeRate() -> uint256: view

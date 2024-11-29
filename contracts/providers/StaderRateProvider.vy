@@ -1,4 +1,4 @@
-# @version 0.3.7
+# @version 0.3.10
 
 struct StaderExchangeRate:
     block_number: uint256
