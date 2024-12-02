@@ -6,6 +6,7 @@ OLD_POOL = '0x2cced4ffA804ADbe1269cDFc22D7904471aBdE63'
 NEW_POOL = '0x0Ca1bd1301191576Bea9b9afCFD4649dD1Ba6822'
 MEVETH = '0x24Ae2dA0f361AA4BE46b48EB19C91e02c5e4f27E'
 YCHAD = '0xFEB4acf3df3cDEA7399794D0869ef76A6EfAff52'
+WETH = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
 
 NUM_OLD_ASSETS = 8
 MEVETH_IDX = 5
@@ -30,6 +31,10 @@ def meveth():
 @fixture
 def ychad(accounts):
     return accounts[YCHAD]
+
+@fixture
+def weth():
+    return Contract(WETH)
 
 @fixture
 def governance(networks, accounts, old):
@@ -62,7 +67,7 @@ def migrate(project, governance, management, operator, ychad, token, old, new, m
     token.set_minter(migrate, sender=ychad)
     return migrate
 
-def test_migrate(management, operator, old, new, migrate, token, meveth):
+def test_migrate(networks, accounts, management, operator, ychad, old, new, migrate, token, meveth, weth):
     yeth_amt = old.supply()
     assert yeth_amt > 0 and new.supply() == 0
     assert migrate.debt() == 0
@@ -100,11 +105,33 @@ def test_migrate(management, operator, old, new, migrate, token, meveth):
 
     # queue withdrawal
     meveth_underlying_amt = meveth.convertToAssets(meveth_amt) * 10_000 // 10_001
-    length = meveth.queueLength()
+    id = meveth.queueLength() + 1
     migrate.withdraw(meveth_underlying_amt, sender=operator)
     assert meveth.balanceOf(migrate) <= 2
-    assert meveth.queueLength() == length + 1
-    assert meveth.withdrawalQueue(length + 1)['receiver'] == management
+    assert meveth.queueLength() == id
+    assert meveth.withdrawalQueue(id)['receiver'] == management
+    
+    # finalize withdrawal
+    networks.active_provider.set_balance(meveth.address, 1000 * UNIT)
+    meveth.processWithdrawalQueue(id, sender=accounts['0x617c8dE5BdE54ffbb8d92716CC947858cA38f582'])
+    pre = weth.balanceOf(management)
+    meveth.claim(id, sender=operator)
+    assert weth.balanceOf(management) - pre >= migrate.debt()
+
+    # withdrawn ETH will be used to buy more LSTs and deposit in new pool
+    debt = migrate.debt()
+    token.set_minter(ychad, sender=ychad)
+    token.mint(ychad, debt, sender=ychad)
+    token.set_minter(ychad, False, sender=ychad)
+    token.transfer(migrate, debt, sender=ychad)
+
+    migrate.repay(debt, sender=operator)
+    assert migrate.debt() == 0
+
+    # revoke minting rights once migration is complete
+    token.set_minter(old, False, sender=ychad)
+    token.set_minter(migrate, False, sender=ychad)
+    assert not token.minters(old) and not token.minters(migrate)
 
 def test_operator_permissions(migrate, operator, alice):
     with reverts():
