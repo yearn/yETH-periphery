@@ -174,7 +174,7 @@ def test_management_permissions(migrate, new, meveth, management, operator, alic
     assert migrate.management() == alice
 
 def test_rate_provider(project, deployer, old):
-    provider = project.NewRateProvider.deploy(sender=deployer)
+    provider = project.V2RateProvider.deploy(sender=deployer)
 
     for i in range(NUM_OLD_ASSETS):
         if i == MEVETH_IDX:
